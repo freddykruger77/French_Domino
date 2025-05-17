@@ -182,10 +182,11 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return;
     }
     
-    if (playerToUpdate.currentScore + PENALTY_POINTS >= game.targetScore) {
-        toast({ title: "Penalty Blocked", description: `${playerToUpdate.name} would bust from this penalty. Standard penalty cannot bust.`, variant: "default" });
-        return;
-    }
+    // Rule change: Penalties can now cause a bust. The protection is removed.
+    // if (playerToUpdate.currentScore + PENALTY_POINTS >= game.targetScore) {
+    //     toast({ title: "Penalty Blocked", description: `${playerToUpdate.name} would bust from this penalty. Standard penalty cannot bust.`, variant: "default" });
+    //     return;
+    // }
 
     const playersAfterPenalty = game.players.map((p, index) => {
       if (index === playerIndex) {
@@ -193,6 +194,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return {
           ...p,
           currentScore: newScore,
+          isBusted: newScore >= game.targetScore, // Penalty can now cause a bust
         };
       }
       return p;
@@ -210,7 +212,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     };
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterPenalty);
-    toast({ title: "Penalty Applied", description: `${playerToUpdate.name} received a ${PENALTY_POINTS} point penalty.`});
+    const updatedPlayer = playersAfterPenalty[playerIndex];
+    let penaltyMessage = `${playerToUpdate.name} received a ${PENALTY_POINTS} point penalty. New score: ${updatedPlayer.currentScore}.`;
+    if (updatedPlayer.isBusted) {
+      penaltyMessage += ` ${playerToUpdate.name} is now BUSTED!`;
+    }
+    toast({ title: "Penalty Applied", description: penaltyMessage});
   };
 
   const handleBoardPassSubmit = () => {
@@ -226,18 +233,18 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     }
 
     let penaltiesAppliedCount = 0;
-    let protectedFromBustCount = 0;
     const newPenaltyEntries: PenaltyLogEntry[] = [];
 
     const playersAfterBoardPass = game.players.map(player => {
       if (player.id === boardPassIssuerId || player.isBusted) {
-        return player; 
+        return player; // Issuer and already busted players are not affected
       }
       
-      if (player.currentScore + PENALTY_POINTS >= game.targetScore) {
-        protectedFromBustCount++;
-        return player; 
-      }
+      // Rule change: Board pass penalty can now cause a bust. Protection removed.
+      // if (player.currentScore + PENALTY_POINTS >= game.targetScore) {
+      //   protectedFromBustCount++; // This concept is removed with the rule change.
+      //   return player; 
+      // }
       
       penaltiesAppliedCount++;
       const newScoreForReceiver = player.currentScore + PENALTY_POINTS;
@@ -251,33 +258,33 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       return {
         ...player,
         currentScore: newScoreForReceiver,
+        isBusted: newScoreForReceiver >= game.targetScore, // Board pass penalty can now cause a bust
       };
     });
     
     const issuerName = game.players.find(p=>p.id === boardPassIssuerId)?.name || 'Selected Player';
-    if (penaltiesAppliedCount === 0 && protectedFromBustCount === 0 && game.players.filter(p => p.id !== boardPassIssuerId && !p.isBusted).length > 0) {
-         toast({
-            title: "No Penalties Applied",
-            description: `No eligible players could receive board pass penalties without busting.`,
-            variant: "default"
-        });
-    } else if (penaltiesAppliedCount > 0 || protectedFromBustCount > 0) {
-        let toastDescription = `${issuerName} passed the board. `;
-        if (penaltiesAppliedCount > 0) {
-            toastDescription += `${penaltiesAppliedCount} player(s) received ${PENALTY_POINTS} points. `;
+    let bustedByBoardPassCount = 0;
+    playersAfterBoardPass.forEach(p => {
+        if (p.id !== boardPassIssuerId && game.players.find(op => op.id === p.id && !op.isBusted) && p.isBusted) {
+            bustedByBoardPassCount++;
         }
-        if (protectedFromBustCount > 0) {
-            toastDescription += `${protectedFromBustCount} other player(s) were protected as the penalty would have caused them to bust.`;
-        }
-         if (penaltiesAppliedCount === 0 && protectedFromBustCount > 0 && game.players.filter(p => p.id !== boardPassIssuerId && !p.isBusted).length === protectedFromBustCount){
-            toastDescription = `${issuerName} passed the board. All ${protectedFromBustCount} potential receivers were protected as the penalty would cause them to bust. No penalties applied.`
-        }
+    });
 
-        toast({
-            title: "Board Pass Processed!",
-            description: toastDescription.trim(),
-        });
+    let toastDescription = `${issuerName} passed the board. `;
+    if (penaltiesAppliedCount > 0) {
+        toastDescription += `${penaltiesAppliedCount} player(s) received ${PENALTY_POINTS} points. `;
     }
+    if (bustedByBoardPassCount > 0) {
+        toastDescription += `${bustedByBoardPassCount} player(s) busted as a result. `;
+    }
+    if (penaltiesAppliedCount === 0) {
+        toastDescription += `No other active players to penalize.`;
+    }
+
+    toast({
+        title: "Board Pass Processed!",
+        description: toastDescription.trim(),
+    });
 
 
     const updatedGameData: Partial<GameState> = {
@@ -301,40 +308,26 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   
   const isBeforeFirstRoundScored = game.rounds.length === 0;
   
-  const activeNonBustedPlayers = game.players.filter(p => !p.isBusted && game.isActive);
-  let shufflerPlayerIds: string[] = [];
+  // activeNonBustedPlayersForDialogs is used for enabling/disabling score entry dialog elements
+  const activeNonBustedPlayersForDialogs = game.players.filter(p => !p.isBusted);
 
-  if (game.isActive && !isBeforeFirstRoundScored && activeNonBustedPlayers.length > 1) {
-    const highestScore = Math.max(...activeNonBustedPlayers.map(p => p.currentScore));
-    shufflerPlayerIds = activeNonBustedPlayers
+  // shufflerPlayerIds logic considers only players active in the game and not busted.
+  let shufflerPlayerIds: string[] = [];
+  if (game.isActive && !isBeforeFirstRoundScored && activeNonBustedPlayersForDialogs.length > 1) {
+    const highestScore = Math.max(...activeNonBustedPlayersForDialogs.map(p => p.currentScore));
+    shufflerPlayerIds = activeNonBustedPlayersForDialogs
       .filter(p => p.currentScore === highestScore)
       .map(p => p.id);
   }
 
   const winner = !game.isActive && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
   
-  const potentialIssuers = game.players.filter(p => !p.isBusted && game.isActive);
+  const potentialBoardPassIssuers = game.players.filter(p => !p.isBusted && game.isActive);
+  const potentialBoardPassReceivers = game.players.filter(p => p.id !== boardPassIssuerId && !p.isBusted && game.isActive);
   
-  let canEnableBoardPassButton = false;
-  if (potentialIssuers.length > 0 && game.isActive) {
-    canEnableBoardPassButton = potentialIssuers.some(issuer => {
-      const receiversForThisIssuer = game.players.filter(receiver =>
-        receiver.id !== issuer.id &&
-        !receiver.isBusted &&
-        (receiver.currentScore + PENALTY_POINTS < game.targetScore) 
-      );
-      return receiversForThisIssuer.length > 0; 
-    });
-  }
-
-  const boardPassDialogSelectDisabled = !game.isActive || potentialIssuers.length === 0;
-  
-  const boardPassDialogConfirmDisabled = !game.isActive || !boardPassIssuerId || 
-    game.players.filter(p => 
-        p.id !== boardPassIssuerId && 
-        !p.isBusted && 
-        (p.currentScore + PENALTY_POINTS < game.targetScore)
-    ).length === 0;
+  const canEnableBoardPassButton = game.isActive && potentialBoardPassIssuers.length > 0 && game.players.filter(p => !p.isBusted && potentialBoardPassIssuers.some(issuer => p.id !== issuer.id)).length > 0;
+  const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
+  const boardPassDialogConfirmDisabled = !game.isActive || !boardPassIssuerId || potentialBoardPassReceivers.length === 0;
 
 
   return (
@@ -347,10 +340,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           </div>
           {game.isActive && (
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              <Button onClick={() => setShowBoardPassDialog(true)} variant="outline" className="w-full sm:w-auto" disabled={!game.isActive || !canEnableBoardPassButton}>
+              <Button onClick={() => setShowBoardPassDialog(true)} variant="outline" className="w-full sm:w-auto" disabled={!canEnableBoardPassButton}>
                 <Annoyed className="mr-2 h-5 w-5" /> Declare Board Pass
               </Button>
-              <Button onClick={() => setShowAddScoreDialog(true)} size="lg" className="w-full sm:w-auto" disabled={!game.isActive || activeNonBustedPlayers.length === 0}>
+              <Button onClick={() => setShowAddScoreDialog(true)} size="lg" className="w-full sm:w-auto" disabled={!game.isActive || activeNonBustedPlayersForDialogs.length === 0}>
                 <PlusCircle className="mr-2 h-5 w-5" /> Add Round Scores
               </Button>
             </div>
@@ -450,13 +443,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                   </div>
                 )
               ))}
-              {activeNonBustedPlayers.length === 0 && game.isActive && (
+              {activeNonBustedPlayersForDialogs.length === 0 && game.isActive && (
                 <p className="text-sm text-destructive text-center">All players are currently busted. No scores can be added.</p>
               )}
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleAddScoreSubmit} disabled={!game.isActive || (game.isActive && activeNonBustedPlayers.length === 0)}>Submit Scores</AlertDialogAction>
+              <AlertDialogAction onClick={handleAddScoreSubmit} disabled={!game.isActive || (game.isActive && activeNonBustedPlayersForDialogs.length === 0)}>Submit Scores</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -466,7 +459,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Declare Board Pass</AlertDialogTitle>
               <AlertDialogDescription>
-                Select the player who successfully passed the board. All other eligible, active players (who will not bust as a result by having their score become {game.targetScore} or more) will receive a {PENALTY_POINTS}-point penalty.
+                Select the player who successfully passed the board. All other active, non-busted players will receive a {PENALTY_POINTS}-point penalty. This penalty can cause a player to bust.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4 py-4">
@@ -480,18 +473,18 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                   <SelectValue placeholder="Select issuer..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {potentialIssuers.map(player => (
+                  {potentialBoardPassIssuers.map(player => (
                       <SelectItem key={player.id} value={player.id}>
                         {player.name}
                       </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {potentialIssuers.length === 0 && game.isActive && (
+              {potentialBoardPassIssuers.length === 0 && game.isActive && (
                 <p className="text-sm text-destructive text-center">All players are currently busted. Board pass cannot be declared.</p>
               )}
-               {!canEnableBoardPassButton && game.isActive && potentialIssuers.length > 0 && (
-                 <p className="text-sm text-destructive text-center">No players are eligible to receive a board pass penalty without busting.</p>
+               {!canEnableBoardPassButton && game.isActive && potentialBoardPassIssuers.length > 0 && (
+                 <p className="text-sm text-destructive text-center">No other active players to penalize.</p>
                )}
             </div>
             <AlertDialogFooter>

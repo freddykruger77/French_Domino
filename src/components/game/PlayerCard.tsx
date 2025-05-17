@@ -31,7 +31,8 @@ export default function PlayerCard({
   isWinner,
 }: PlayerCardProps) {
   const isNearingBust = !player.isBusted && player.currentScore >= targetScore - 10 && player.currentScore < targetScore;
-  const canReceivePenalty = isGameActive && !player.isBusted && (player.currentScore + PENALTY_POINTS < targetScore);
+  // Rule change: Penalties can now cause a bust, so the button is enabled if game active and player not busted.
+  const canReceivePenaltyButton = isGameActive && !player.isBusted;
   
   let statusBadge = null;
   if (player.isBusted) {
@@ -82,9 +83,9 @@ export default function PlayerCard({
             variant="outline"
             size="sm"
             onClick={onPenalty}
-            disabled={!canReceivePenalty}
+            disabled={!canReceivePenaltyButton}
             className="w-full hover:bg-destructive/10 hover:border-destructive hover:text-destructive"
-            title={canReceivePenalty ? `Add ${PENALTY_POINTS} points penalty` : `Cannot apply penalty (player busted, too close to bust, or game inactive)`}
+            title={canReceivePenaltyButton ? `Add ${PENALTY_POINTS} points penalty. This can cause a bust.` : `Cannot apply penalty (player busted or game inactive).`}
           >
             <ShieldPlus className="mr-2 h-4 w-4" /> Penalty (+{PENALTY_POINTS})
           </Button>
