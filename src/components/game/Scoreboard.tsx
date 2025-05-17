@@ -7,7 +7,7 @@ import useLocalStorage from '@/hooks/useLocalStorage';
 import PlayerCard from './PlayerCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History, Gamepad2, Annoyed } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History, Gamepad2, Annoyed, Trophy } from 'lucide-react';
 import { LOCAL_STORAGE_KEYS, PENALTY_POINTS } from '@/lib/constants';
 import {
   AlertDialog,
@@ -59,28 +59,35 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const gameToEnd = { ...currentGame, players: updatedPlayersList };
   
     const anyPlayerBustedInThisAction = updatedPlayersList.some(p => p.isBusted && !currentGame.players.find(op => op.id === p.id)?.isBusted);
-    const anyPlayerWasAlreadyBusted = currentGame.players.some(p => p.isBusted);
-    const gameShouldEndNow = anyPlayerBustedInThisAction || (anyPlayerWasAlreadyBusted && gameToEnd.isActive); // End if new bust, or if already bust and game was active
+    // Game ends if it was active and at least one player is busted (newly or previously)
+    const gameShouldEndNow = gameToEnd.isActive && updatedPlayersList.some(p => p.isBusted);
 
-    if (gameToEnd.isActive && gameShouldEndNow && updatedPlayersList.some(p => p.isBusted)) {
+    if (gameShouldEndNow) {
       gameToEnd.isActive = false;
       let gameEndMessage = "Game Over!";
       
-      const allBustedInFinalState = updatedPlayersList.filter(p => p.isBusted).map(p => p.name);
+      const bustedPlayersInFinalState = updatedPlayersList.filter(p => p.isBusted);
       const nonBustedPlayers = updatedPlayersList.filter(p => !p.isBusted);
   
       if (nonBustedPlayers.length > 0) {
+        // Sort non-busted players by score to find the winner (lowest score)
         const sortedNonBustedPlayers = [...nonBustedPlayers].sort((a, b) => a.currentScore - b.currentScore);
-        gameToEnd.winnerId = sortedNonBustedPlayers[0].id;
         const winnerPlayer = sortedNonBustedPlayers[0];
+        gameToEnd.winnerId = winnerPlayer.id;
         
-        gameEndMessage = `${allBustedInFinalState.length > 0 ? `${allBustedInFinalState.join(', ')} busted.` : ''} ${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
+        let winnerText = `${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
         if (winnerPlayer.currentScore === 0) {
-          gameEndMessage += " A PERFECT GAME!";
+          winnerText += " A PERFECT GAME!";
         }
-      } else {
-        gameToEnd.winnerId = undefined;
-        gameEndMessage = `All players busted: ${allBustedInFinalState.join(', ')}. There is no winner.`;
+        // Check for lone survivor win
+        if (nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length === updatedPlayersList.length - 1) {
+          winnerText += " A dominant performance, outlasting all opponents!";
+        }
+        gameEndMessage = winnerText;
+
+      } else { // All players busted
+        gameToEnd.winnerId = undefined; // No winner
+        gameEndMessage = `All players busted. There is no winner.`;
       }
       
       toast({
@@ -178,7 +185,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const initialScores: Record<string, string> = {};
     game.players.forEach(p => initialScores[p.id] = ''); 
     setCurrentRoundScores(initialScores);
-    // setShowAddScoreDialog(false); // Already handled by updateGameStateAndCheckEnd if game becomes inactive
   };
 
   const handlePenalty = (playerIdToPenalize: string) => {
@@ -264,6 +270,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return player; 
       }
       
+      // Player is protected from board pass penalty if they are within PENALTY_POINTS of target score
       if (player.currentScore >= game.targetScore - PENALTY_POINTS) {
         protectedFromPenaltyCount++;
         return player; 
@@ -325,7 +332,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterBoardPass);
     setBoardPassIssuerId(null);
-    // setShowBoardPassDialog(false); // Already handled by updateGameStateAndCheckEnd if game becomes inactive
   };
 
 
@@ -350,7 +356,26 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
   const gameIsOver = !game.isActive;
   const winner = gameIsOver && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
+  const bustedPlayers = gameIsOver ? game.players.filter(p => p.isBusted) : [];
   
+  // Milestones calculation for game over summary
+  let isLoneSurvivorWin = false;
+  let highestScoreInGame = 0;
+  let playersWithHighestScore: PlayerInGame[] = [];
+  let playersOver150: PlayerInGame[] = [];
+
+  if (gameIsOver) {
+    const nonBustedInGameOver = game.players.filter(p => !p.isBusted);
+    isLoneSurvivorWin = !!(winner && nonBustedInGameOver.length === 1 && bustedPlayers.length === game.players.length - 1);
+    
+    if (game.players.length > 0) {
+      highestScoreInGame = Math.max(...game.players.map(p => p.currentScore));
+      playersWithHighestScore = game.players.filter(p => p.currentScore === highestScoreInGame);
+    }
+    playersOver150 = game.players.filter(p => p.currentScore > 150);
+  }
+
+
   const potentialBoardPassIssuers = game.players.filter(p => !p.isBusted && game.isActive);
   
   const potentialBoardPassReceivers = game.players.filter(p => 
@@ -363,9 +388,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButton = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                      p.id !== boardPassIssuerId && // ensure there's someone else
+                                      p.id !== boardPassIssuerId && 
                                       !p.isBusted && 
-                                      p.currentScore < game.targetScore - PENALTY_POINTS // and they can receive penalty
+                                      p.currentScore < game.targetScore - PENALTY_POINTS 
                                    );
 
   const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
@@ -398,11 +423,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               <span className="text-xl font-semibold">
                 {winner.name} wins with a score of {winner.currentScore}!
                 {winner.currentScore === 0 && " A PERFECT GAME!"}
+                {isLoneSurvivorWin && " A dominant performance, outlasting all opponents!"}
                 {' '}Congratulations!
               </span>
-              {game.players.filter(p => p.isBusted).length > 0 && (
+              {bustedPlayers.length > 0 && (
                 <span className="text-sm mt-1">
-                  (Busted: {game.players.filter(p => p.isBusted).map(p => p.name).join(', ')})
+                  (Busted: {bustedPlayers.map(p => p.name).join(', ')})
                 </span>
               )}
             </div>
@@ -413,9 +439,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <XCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
             <div className="flex flex-col text-left">
               <span className="font-semibold">Game Over. No winner as all players busted.</span>
-               {game.players.filter(p => p.isBusted).length > 0 && (
+               {bustedPlayers.length > 0 && (
                 <span className="text-sm mt-1">
-                  Busted: {game.players.filter(p => p.isBusted).map(p => p.name).join(', ')}
+                  (Busted: {bustedPlayers.map(p => p.name).join(', ')})
                 </span>
               )}
             </div>
@@ -444,6 +470,34 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             );
           })}
         </div>
+
+        {gameIsOver && (
+          <Card className="mt-6 bg-secondary/20 dark:bg-secondary/10 border-border/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xl flex items-center gap-2 text-primary">
+                <Trophy className="h-5 w-5" />
+                Game Milestones
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm space-y-1 text-foreground/80">
+              {winner && winner.currentScore === 0 && (
+                <p><strong>Perfect Game:</strong> {winner.name} won with 0 points!</p>
+              )}
+              {isLoneSurvivorWin && winner && (
+                 <p><strong>Lone Survivor:</strong> {winner.name} was the last player standing!</p>
+              )}
+              {playersWithHighestScore.length > 0 && (
+                <p><strong>Highest Score This Game:</strong> {highestScoreInGame} (Achieved by: {playersWithHighestScore.map(p => p.name).join(', ')})</p>
+              )}
+              {playersOver150.length > 0 && (
+                <p><strong>Reached Over 150 Points:</strong> {playersOver150.map(p => `${p.name} (${p.currentScore})`).join(', ')}</p>
+              )}
+              {(winner?.currentScore !== 0 && !isLoneSurvivorWin && playersWithHighestScore.length === 0 && playersOver150.length === 0) && (
+                <p className="text-muted-foreground">No special milestones recorded for this game beyond the winner.</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="round-history">
