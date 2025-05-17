@@ -90,6 +90,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     
     const finalGameState = checkAndEndGame(nextGameState, nextGameState.players);
     setGame(finalGameState);
+
+    // If the game has just ended, ensure dialogs are closed.
+    if (!finalGameState.isActive) {
+      setShowAddScoreDialog(false);
+      setShowBoardPassDialog(false);
+    }
   }, [game, setGame, checkAndEndGame]);
 
 
@@ -156,7 +162,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     };
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterRound);
-    setShowAddScoreDialog(false);
+    // setShowAddScoreDialog(false); // Moved to updateGameStateAndCheckEnd if game becomes inactive
     const initialScores: Record<string, string> = {};
     game.players.forEach(p => initialScores[p.id] = ''); 
     setCurrentRoundScores(initialScores);
@@ -182,7 +188,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return;
     }
 
-    // Rule: Player cannot receive penalty points if they are within 10 points of busting.
+    // Rule: Player cannot receive penalty points if they are within PENALTY_POINTS of busting.
     if (playerToUpdate.currentScore >= game.targetScore - PENALTY_POINTS) {
         toast({ 
             title: "Penalty Blocked", 
@@ -242,10 +248,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
     const playersAfterBoardPass = game.players.map(player => {
       if (player.id === boardPassIssuerId || player.isBusted) {
-        return player; // Issuer and already busted players are not affected
+        return player; 
       }
       
-      // Rule: Player cannot receive penalty points if they are within 10 points of busting.
       if (player.currentScore >= game.targetScore - PENALTY_POINTS) {
         protectedFromPenaltyCount++;
         return player; 
@@ -270,7 +275,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const issuerName = game.players.find(p=>p.id === boardPassIssuerId)?.name || 'Selected Player';
     let bustedByBoardPassCount = 0;
     playersAfterBoardPass.forEach(p => {
-        // Check if player was NOT busted before but IS busted now, and is not the issuer
         const originalPlayerState = game.players.find(op => op.id === p.id);
         if (p.id !== boardPassIssuerId && originalPlayerState && !originalPlayerState.isBusted && p.isBusted) {
             bustedByBoardPassCount++;
@@ -282,15 +286,17 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         toastDescription += `${penaltiesAppliedCount} player(s) received ${PENALTY_POINTS} points. `;
     }
     if (protectedFromPenaltyCount > 0) {
-        toastDescription += `${protectedFromPenaltyCount} player(s) were protected from penalty (too close to bust). `;
+        toastDescription += `${protectedFromPenaltyCount} player(s) were protected from penalty. `;
     }
     if (bustedByBoardPassCount > 0) {
         toastDescription += `${bustedByBoardPassCount} player(s) busted as a result. `;
     }
-    if (penaltiesAppliedCount === 0 && protectedFromPenaltyCount === 0 && potentialBoardPassReceivers.length > 0) {
-        toastDescription += `All other active players were protected from the penalty.`;
-    } else if (penaltiesAppliedCount === 0 && protectedFromPenaltyCount === 0) {
-        toastDescription += `No other active players to penalize or protect.`;
+    
+    const potentialReceiversExist = game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted);
+    if (penaltiesAppliedCount === 0 && protectedFromPenaltyCount === 0 && potentialReceiversExist) {
+        toastDescription += `No other active players were eligible to receive a penalty or all were protected.`;
+    } else if (penaltiesAppliedCount === 0 && protectedFromPenaltyCount === 0 && !potentialReceiversExist) {
+         toastDescription += `No other active players to penalize or protect.`;
     }
 
 
@@ -306,7 +312,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterBoardPass);
 
-    setShowBoardPassDialog(false);
+    // setShowBoardPassDialog(false); // Moved to updateGameStateAndCheckEnd if game becomes inactive
     setBoardPassIssuerId(null);
   };
 
@@ -334,24 +340,23 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const winner = !game.isActive && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
   
   const potentialBoardPassIssuers = game.players.filter(p => !p.isBusted && game.isActive);
-  // Receivers are those who are not the issuer, not busted, AND not within 10 points of target
+  
   const potentialBoardPassReceivers = game.players.filter(p => 
     p.id !== boardPassIssuerId && 
     !p.isBusted && 
     game.isActive &&
-    p.currentScore < game.targetScore - PENALTY_POINTS // Can receive penalty without being in protected zone
+    p.currentScore < game.targetScore - PENALTY_POINTS 
   );
   
   const canEnableBoardPassButton = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                      p.id !== boardPassIssuerId && // Ensure there's at least one *other* player
+                                      p.id !== boardPassIssuerId && 
                                       !p.isBusted && 
-                                      p.currentScore < game.targetScore - PENALTY_POINTS // And that *other* player can receive penalty
+                                      p.currentScore < game.targetScore - PENALTY_POINTS
                                    );
 
   const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
-  // Confirm button enabled if an issuer is selected AND there is at least one valid receiver
   const boardPassDialogConfirmDisabled = !game.isActive || !boardPassIssuerId || potentialBoardPassReceivers.length === 0;
 
 
@@ -477,7 +482,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleAddScoreSubmit} disabled={!game.isActive || (game.isActive && activeNonBustedPlayersForDialogs.length === 0)}>Submit Scores</AlertDialogAction>
+              <AlertDialogAction onClick={handleAddScoreSubmit} disabled={!game.isActive || activeNonBustedPlayersForDialogs.length === 0}>Submit Scores</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -487,7 +492,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Declare Board Pass</AlertDialogTitle>
               <AlertDialogDescription>
-                Select the player who successfully passed the board. All other active, non-busted players (not within {PENALTY_POINTS} points of target) will receive a {PENALTY_POINTS}-point penalty. This penalty can cause a player to bust if they are not in the protected zone.
+                Select the player who successfully passed the board. All other active, non-busted players (not within {PENALTY_POINTS} points of target) will receive a {PENALTY_POINTS}-point penalty. This penalty can cause a player to bust.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4 py-4">
@@ -514,8 +519,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               {game.isActive && potentialBoardPassIssuers.length === 0 && (
                 <p className="text-sm text-destructive text-center">All players are currently busted. Board pass cannot be declared.</p>
               )}
-               {game.isActive && !canEnableBoardPassButton && potentialBoardPassIssuers.length > 0 && (
-                 <p className="text-sm text-destructive text-center">No other active players eligible to receive a penalty (either busted or too close to target).</p>
+               {game.isActive && !canEnableBoardPassButton && potentialBoardPassIssuers.length > 0 && ( // This case might need review - if issuers exist but no valid receivers
+                 <p className="text-sm text-destructive text-center">No other active players eligible to receive a penalty (either busted or too close to target for penalty).</p>
                )}
             </div>
             <AlertDialogFooter>
