@@ -325,6 +325,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             const isPerfectGameCandidate = !isBeforeFirstRoundScored && player.currentScore === 0 && game.isActive && !player.isBusted;
             const isThisPlayerShuffler = shufflerPlayerIds.length === 1 && shufflerPlayerIds[0] === player.id;
             const isThisPlayerTiedForShuffle = shufflerPlayerIds.length > 1 && shufflerPlayerIds.includes(player.id);
+            const isCurrentPlayerWinner = winner?.id === player.id;
 
             return (
               <PlayerCard
@@ -337,6 +338,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                 isShuffler={isThisPlayerShuffler}
                 isTiedForShuffle={isThisPlayerTiedForShuffle}
                 isPerfectGameCandidate={isPerfectGameCandidate}
+                isWinner={isCurrentPlayerWinner}
               />
             );
           })}

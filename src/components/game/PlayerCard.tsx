@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, ShieldPlus, User, Zap, Skull, Crown, Users } from 'lucide-react';
 import { PENALTY_POINTS } from '@/lib/constants';
+import { cn } from '@/lib/utils';
 
 interface PlayerCardProps {
   player: PlayerInGame;
@@ -17,6 +18,7 @@ interface PlayerCardProps {
   isShuffler: boolean;
   isTiedForShuffle: boolean;
   isPerfectGameCandidate: boolean;
+  isWinner?: boolean;
 }
 
 export default function PlayerCard({
@@ -28,6 +30,7 @@ export default function PlayerCard({
   isShuffler,
   isTiedForShuffle,
   isPerfectGameCandidate,
+  isWinner,
 }: PlayerCardProps) {
   const isNearingBust = !player.isBusted && player.currentScore >= targetScore - 10 && player.currentScore < targetScore;
   const canReceivePenalty = isGameActive && !player.isBusted && (player.currentScore + PENALTY_POINTS < targetScore);
@@ -55,11 +58,16 @@ export default function PlayerCard({
 
 
   return (
-    <Card className={`shadow-md ${player.isBusted ? 'opacity-60 bg-muted/50' : 'bg-card'} transition-all`}>
+    <Card className={cn(
+      "shadow-md transition-all",
+      player.isBusted ? 'opacity-60 bg-muted/50' : 'bg-card',
+      isWinner && !player.isBusted ? 'border-2 border-yellow-400 dark:border-yellow-500 bg-yellow-50 dark:bg-yellow-800/30 shadow-lg shadow-yellow-500/30 dark:shadow-yellow-400/20' : ''
+    )}>
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <CardTitle className="text-xl font-semibold flex items-center gap-2">
-            <User className={`h-6 w-6 ${player.isBusted ? 'text-muted-foreground' : 'text-primary'}`} />
+            {isWinner && !player.isBusted && <Crown className="h-6 w-6 text-yellow-500 dark:text-yellow-400" />}
+            <User className={`h-6 w-6 ${player.isBusted ? 'text-muted-foreground' : (isWinner && !player.isBusted ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary')}`} />
             {player.name}
           </CardTitle>
           {statusBadge}
@@ -67,7 +75,7 @@ export default function PlayerCard({
         <CardDescription>Current Score</CardDescription>
       </CardHeader>
       <CardContent className="pb-3">
-        <p className={`text-5xl font-bold ${player.isBusted ? 'text-destructive' : 'text-accent'}`}>
+        <p className={`text-5xl font-bold ${player.isBusted ? 'text-destructive' : (isWinner && !player.isBusted ? 'text-yellow-600 dark:text-yellow-500' : 'text-accent')}`}>
           {player.currentScore}
         </p>
         <p className="text-xs text-muted-foreground">Target: {targetScore}</p>
