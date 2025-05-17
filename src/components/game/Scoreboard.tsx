@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback }  from 'react';
@@ -89,20 +90,27 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const scoresForRound: GameRoundScore = {};
     let isValid = true;
     game.players.forEach(player => {
-      const scoreStr = currentRoundScores[player.id];
-      const score = parseInt(scoreStr, 10);
-      if (isNaN(score) || score < 0) {
-        isValid = false;
+      // Only process scores for non-busted players
+      if (!player.isBusted) {
+        const scoreStr = currentRoundScores[player.id];
+        const score = parseInt(scoreStr, 10);
+        if (isNaN(score) || score < 0) {
+          isValid = false;
+        }
+        scoresForRound[player.id] = score; // Store score even if player will bust
+      } else {
+        scoresForRound[player.id] = 0; // Busted players score 0 for the round
       }
-      scoresForRound[player.id] = score;
     });
 
     if (!isValid) {
-      toast({ title: "Invalid Scores", description: "Please enter valid, non-negative scores for all players.", variant: "destructive"});
+      toast({ title: "Invalid Scores", description: "Please enter valid, non-negative scores for all active players.", variant: "destructive"});
       return;
     }
 
     const updatedPlayers = game.players.map(player => {
+      if (player.isBusted) return player; // Keep busted players as they are
+
       const roundScore = scoresForRound[player.id] || 0;
       const newTotalScore = player.currentScore + roundScore;
       return {
@@ -133,11 +141,11 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     if (playerIndex === -1) return;
 
     const player = game.players[playerIndex];
-    // Rule: Penalty cannot bust player or be applied if player is within 10 points of busting
+    // Rule: Penalty cannot bust player or be applied if player is within PENALTY_POINTS of busting
     if (player.currentScore + PENALTY_POINTS >= game.targetScore) {
       toast({
         title: "Penalty Blocked",
-        description: `${player.name} is too close to busting. Penalty cannot be applied.`,
+        description: `${player.name} is too close to busting or would bust. Penalty cannot be applied.`,
         variant: "destructive"
       });
       return;
@@ -147,12 +155,14 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     updatedPlayers[playerIndex] = {
       ...player,
       currentScore: player.currentScore + PENALTY_POINTS,
+      // Optionally, log penalty to roundScores or a separate log
+      // roundScores: [...player.roundScores, PENALTY_POINTS] // if penalty affects round score
     };
+    
+    // Consider how penalties affect aiGameRecords. For now, it's a direct score modification.
+    // If it should be part of a round, then a new round needs to be constructed.
+    // Let's assume penalty does not create a new "round" for aiGameRecords unless explicitly stated.
 
-    // Create a "penalty round" - or decide how to log penalties.
-    // For simplicity, let's treat it like a score addition without a formal round change for now.
-    // A better approach might be a dedicated penalty log or special round type.
-    // For now, just update player score. No full round progression.
     const updatedGame = { ...game, players: updatedPlayers };
     setGame(updatedGame);
     toast({ title: "Penalty Applied", description: `${player.name} received a ${PENALTY_POINTS} point penalty.`});
@@ -167,7 +177,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   }
   
   const sortedPlayers = [...game.players].sort((a, b) => a.currentScore - b.currentScore); // Lowest score first
-  const shufflePlayer = game.players.reduce((highest, p) => p.currentScore > highest.currentScore ? p : highest, game.players[0]);
+  
+  // Determine shufflePlayer among active (non-busted) players only
+  const activePlayersForShuffle = game.players.filter(p => !p.isBusted && game.isActive);
+  const shufflePlayer = activePlayersForShuffle.length > 0 
+    ? activePlayersForShuffle.reduce((highest, p) => p.currentScore > highest.currentScore ? p : highest, activePlayersForShuffle[0])
+    : null;
 
 
   return (
@@ -204,9 +219,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               key={player.id}
               player={player}
               targetScore={game.targetScore}
-              isShuffle={player.id === shufflePlayer?.id && game.players.length > 1 && game.isActive}
+              isShuffle={player.id === shufflePlayer?.id && activePlayersForShuffle.length > 1 && game.isActive && !player.isBusted}
               onPenalty={() => handlePenalty(player.id)}
               isGameActive={game.isActive}
+              isBeforeFirstRoundScored={game.currentRoundNumber === 1}
             />
           ))}
         </div>
@@ -217,12 +233,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Add Scores for Round {game.currentRoundNumber}</AlertDialogTitle>
               <AlertDialogDescription>
-                Enter the points each player scored in this round.
+                Enter the points each player scored in this round. Busted players are excluded.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4 py-4">
               {game.players.map(player => (
-                !player.isBusted && (
+                !player.isBusted && ( // Only show inputs for players who are not busted
                   <div key={player.id} className="flex items-center justify-between">
                     <Label htmlFor={`score-${player.id}`} className="text-base min-w-[100px]">{player.name}:</Label>
                     <Input

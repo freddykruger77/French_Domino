@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { PlayerInGame } from '@/lib/types';
@@ -13,22 +14,24 @@ interface PlayerCardProps {
   isShuffle: boolean;
   onPenalty: () => void;
   isGameActive: boolean;
+  isBeforeFirstRoundScored: boolean; // New prop
 }
 
-export default function PlayerCard({ player, targetScore, isShuffle, onPenalty, isGameActive }: PlayerCardProps) {
+export default function PlayerCard({ player, targetScore, isShuffle, onPenalty, isGameActive, isBeforeFirstRoundScored }: PlayerCardProps) {
   const isNearingBust = !player.isBusted && player.currentScore >= targetScore - 10 && player.currentScore < targetScore;
   const canReceivePenalty = !player.isBusted && (player.currentScore + PENALTY_POINTS < targetScore);
-  const isPerfectGameCandidate = player.currentScore === 0; // This needs to be combined with winning state
+  
+  // Perfect score is only relevant after the first round, if game is active, and score is 0
+  const isPerfectGameCandidate = !isBeforeFirstRoundScored && player.currentScore === 0 && isGameActive && !player.isBusted;
 
   let statusBadge = null;
   if (player.isBusted) {
     statusBadge = <Badge variant="destructive" className="flex items-center gap-1"><Skull className="h-3 w-3" /> Busted</Badge>;
-  } else if (isShuffle) {
+  } else if (!isBeforeFirstRoundScored && isShuffle) { // Display shuffle only after first round scores
     statusBadge = <Badge variant="outline" className="border-orange-500 text-orange-600 flex items-center gap-1"><Zap className="h-3 w-3" /> Shuffle</Badge>;
   } else if (isNearingBust) {
     statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
-  } else if (isPerfectGameCandidate) {
-     // This is just a visual cue if score is 0; actual perfect game determined at game end.
+  } else if (isPerfectGameCandidate) { // Display perfect score candidate only after first round scores
      statusBadge = <Badge variant="outline" className="border-green-500 text-green-600 flex items-center gap-1"><Crown className="h-3 w-3" /> Perfect Score!</Badge>;
   }
 
