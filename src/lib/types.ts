@@ -1,4 +1,5 @@
 
+
 export interface Player {
   id: string;
   name: string;
@@ -23,6 +24,7 @@ export interface PenaltyLogEntry {
   roundNumber: number; // The round number *during* or *after* which the penalty was applied (game.currentRoundNumber at time of penalty)
   playerId: string;
   points: number;
+  reason?: 'Standard Penalty' | 'Board Pass (Receiver)' | string; // Optional: to specify penalty type
 }
 
 export interface GameState {
@@ -34,7 +36,7 @@ export interface GameState {
   isActive: boolean;
   createdAt: string; // ISO date string
   winnerId?: string; // playerId
-  penaltyLog?: PenaltyLogEntry[]; // Log of penalties applied
+  penaltyLog: PenaltyLogEntry[]; // Log of penalties applied - made non-optional
   // For AI collusion detection
   // This matches the AI input structure DetectCollusionInput.gameRecords
   // playerScores array needs to maintain consistent player order across rounds.
@@ -68,3 +70,4 @@ export interface Tournament {
 export interface CachedPlayer extends Player {
   lastUsed: string; // ISO date string
 }
+

@@ -7,7 +7,7 @@ import useLocalStorage from '@/hooks/useLocalStorage';
 import PlayerCard from './PlayerCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History, Gamepad2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History, Gamepad2, Annoyed } from 'lucide-react';
 import { LOCAL_STORAGE_KEYS, PENALTY_POINTS } from '@/lib/constants';
 import {
   AlertDialog,
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import Link from "next/link";
@@ -39,6 +40,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [showAddScoreDialog, setShowAddScoreDialog] = useState(false);
   const [currentRoundScores, setCurrentRoundScores] = useState<Record<string, string>>({}); // Store as strings for input
+  const [showBoardPassDialog, setShowBoardPassDialog] = useState(false);
+  const [boardPassIssuerId, setBoardPassIssuerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (game) {
@@ -178,6 +181,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       roundNumber: game.currentRoundNumber, 
       playerId: playerToUpdate.id,
       points: PENALTY_POINTS,
+      reason: 'Standard Penalty'
     };
     
     const updatedGame = { 
@@ -188,6 +192,76 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     setGame(updatedGame);
     toast({ title: "Penalty Applied", description: `${playerToUpdate.name} received a ${PENALTY_POINTS} point penalty.`});
   };
+
+  const handleBoardPassSubmit = () => {
+    if (!game || !game.isActive || !boardPassIssuerId) {
+      toast({
+        title: "Invalid Action",
+        description: "Game must be active and an issuer selected for Board Pass.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    let penaltiesAppliedCount = 0;
+    const newPenaltyEntries: PenaltyLogEntry[] = [];
+
+    const updatedPlayers = game.players.map(player => {
+      if (player.id === boardPassIssuerId || player.isBusted || (player.currentScore + PENALTY_POINTS >= game.targetScore)) {
+        return player; // Issuer, busted players, or those who would bust don't get points
+      }
+
+      penaltiesAppliedCount++;
+      newPenaltyEntries.push({
+        roundNumber: game.currentRoundNumber,
+        playerId: player.id,
+        points: PENALTY_POINTS,
+        reason: 'Board Pass (Receiver)'
+      });
+
+      return {
+        ...player,
+        currentScore: player.currentScore + PENALTY_POINTS,
+      };
+    });
+    
+    if (penaltiesAppliedCount === 0) {
+        toast({
+            title: "No Penalties Applied",
+            description: "No eligible players could receive board pass penalties.",
+            variant: "default"
+        });
+    } else {
+        const issuerName = game.players.find(p=>p.id === boardPassIssuerId)?.name || 'Selected Player';
+        toast({
+            title: "Board Pass Processed!",
+            description: `${issuerName} passed the board. ${penaltiesAppliedCount} other player(s) received ${PENALTY_POINTS} points.`,
+        });
+    }
+
+
+    const updatedGame: GameState = {
+      ...game,
+      players: updatedPlayers,
+      penaltyLog: [...(game.penaltyLog || []), ...newPenaltyEntries],
+    };
+
+    // Check for game end condition after applying board pass penalties
+    const activePlayersAfterBoardPass = updatedPlayers.filter(p => !p.isBusted);
+    if (activePlayersAfterBoardPass.length <= 1 && updatedPlayers.length > 1) {
+      updatedGame.isActive = false;
+      updatedGame.winnerId = activePlayersAfterBoardPass.length === 1 ? activePlayersAfterBoardPass[0].id : undefined;
+      toast({
+        title: "Game Over!",
+        description: updatedGame.winnerId ? `${updatedGame.players.find(p=>p.id === updatedGame.winnerId)?.name} wins!` : "All players busted or game ended due to board pass.",
+      });
+    }
+
+    setGame(updatedGame);
+    setShowBoardPassDialog(false);
+    setBoardPassIssuerId(null);
+  };
+
 
   if (isLoading) {
     return <Card><CardHeader><CardTitle>Loading Game...</CardTitle></CardHeader><CardContent>Please wait.</CardContent></Card>;
@@ -210,19 +284,26 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   }
 
   const winner = !game.isActive && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
+  const canDeclareBoardPass = game.isActive && game.players.filter(p => !p.isBusted && (p.currentScore + PENALTY_POINTS < game.targetScore)).length > 1;
+
 
   return (
     <Card className="w-full shadow-xl">
       <CardHeader>
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <CardTitle className="text-3xl font-bold text-primary">Game: {gameId.substring(0, gameId.indexOf('-') !== -1 ? gameId.indexOf('-') + 6 : gameId.length)}</CardTitle>
             <CardDescription>Target Score: {game.targetScore} | Round: {game.currentRoundNumber}</CardDescription>
           </div>
           {game.isActive && (
-            <Button onClick={() => setShowAddScoreDialog(true)} size="lg">
-              <PlusCircle className="mr-2 h-5 w-5" /> Add Round Scores
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button onClick={() => setShowBoardPassDialog(true)} variant="outline" className="w-full sm:w-auto" disabled={!canDeclareBoardPass}>
+                <Annoyed className="mr-2 h-5 w-5" /> Declare Board Pass
+              </Button>
+              <Button onClick={() => setShowAddScoreDialog(true)} size="lg" className="w-full sm:w-auto">
+                <PlusCircle className="mr-2 h-5 w-5" /> Add Round Scores
+              </Button>
+            </div>
           )}
         </div>
          {winner && (
@@ -270,10 +351,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               </div>
             </AccordionTrigger>
             <AccordionContent>
-              {game.rounds.length > 0 ? (
+              {game.rounds.length > 0 || (game.penaltyLog && game.penaltyLog.length > 0) ? (
                 <RoundHistoryTable game={game} />
               ) : (
-                <p className="text-muted-foreground p-4 text-center">No rounds have been played yet.</p>
+                <p className="text-muted-foreground p-4 text-center">No rounds or penalties recorded yet.</p>
               )}
             </AccordionContent>
           </AccordionItem>
@@ -323,7 +404,44 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           </AlertDialogContent>
         </AlertDialog>
 
+        <AlertDialog open={showBoardPassDialog} onOpenChange={setShowBoardPassDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Declare Board Pass</AlertDialogTitle>
+              <AlertDialogDescription>
+                Select the player who successfully passed the board. All other eligible, active players will receive a {PENALTY_POINTS}-point penalty.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-4 py-4">
+              <Label htmlFor="board-pass-issuer">Player who passed the board:</Label>
+              <Select
+                value={boardPassIssuerId || undefined}
+                onValueChange={(value) => setBoardPassIssuerId(value)}
+                disabled={!game.isActive}
+              >
+                <SelectTrigger id="board-pass-issuer">
+                  <SelectValue placeholder="Select issuer..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {game.players
+                    .filter(p => !p.isBusted && game.isActive)
+                    .map(player => (
+                      <SelectItem key={player.id} value={player.id}>
+                        {player.name}
+                      </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setBoardPassIssuerId(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleBoardPassSubmit} disabled={!game.isActive || !boardPassIssuerId}>Confirm Board Pass</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
       </CardContent>
     </Card>
   );
 }
+
