@@ -137,25 +137,27 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const handlePenalty = (playerIdToPenalize: string) => {
     if (!game || !game.isActive) return;
 
-    const playerToUpdate = game.players.find(p => p.id === playerIdToPenalize);
+    const playerIndex = game.players.findIndex(p => p.id === playerIdToPenalize);
 
-    if (!playerToUpdate) {
+    if (playerIndex === -1) {
       toast({ title: "Error", description: `Player to penalize (ID: ${playerIdToPenalize}) not found.`, variant: "destructive"});
       return;
     }
+    
+    const playerToUpdate = game.players[playerIndex];
 
-    // Rule: Penalty cannot bust player or be applied if player is within PENALTY_POINTS of busting
+    // Rule: Penalty cannot bust player or be applied if player is busted or would bust
     if (playerToUpdate.isBusted || (playerToUpdate.currentScore + PENALTY_POINTS >= game.targetScore)) {
       toast({
         title: "Penalty Blocked",
-        description: `${playerToUpdate.name} is already busted, too close to busting, or would bust. Penalty cannot be applied.`,
+        description: `${playerToUpdate.name} is already busted or would bust. Penalty cannot be applied.`,
         variant: "destructive"
       });
       return;
     }
 
-    const updatedPlayers = game.players.map(p => {
-      if (p.id === playerIdToPenalize) {
+    const updatedPlayers = game.players.map((p, index) => {
+      if (index === playerIndex) {
         return {
           ...p,
           currentScore: p.currentScore + PENALTY_POINTS,
@@ -176,8 +178,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   if (!game) {
     return <Card><CardHeader><CardTitle>Error</CardTitle></CardHeader><CardContent>Game data could not be loaded.</CardContent></Card>;
   }
-  
-  const sortedPlayers = [...game.players].sort((a, b) => a.currentScore - b.currentScore); // Lowest score first
   
   // Determine shufflePlayer among active (non-busted) players only
   const activePlayersForShuffle = game.players.filter(p => !p.isBusted && game.isActive);
@@ -215,7 +215,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-          {sortedPlayers.map((player) => (
+          {game.players.map((player) => ( // Changed from sortedPlayers to game.players
             <PlayerCard
               key={player.id}
               player={player}
