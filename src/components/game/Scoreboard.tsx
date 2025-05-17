@@ -134,38 +134,39 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     setCurrentRoundScores(initialScores);
   };
 
-  const handlePenalty = (playerId: string) => {
+  const handlePenalty = (playerIdToPenalize: string) => {
     if (!game || !game.isActive) return;
 
-    const playerIndex = game.players.findIndex(p => p.id === playerId);
-    if (playerIndex === -1) return;
+    const playerToUpdate = game.players.find(p => p.id === playerIdToPenalize);
 
-    const player = game.players[playerIndex];
+    if (!playerToUpdate) {
+      toast({ title: "Error", description: `Player to penalize (ID: ${playerIdToPenalize}) not found.`, variant: "destructive"});
+      return;
+    }
+
     // Rule: Penalty cannot bust player or be applied if player is within PENALTY_POINTS of busting
-    if (player.currentScore + PENALTY_POINTS >= game.targetScore) {
+    if (playerToUpdate.isBusted || (playerToUpdate.currentScore + PENALTY_POINTS >= game.targetScore)) {
       toast({
         title: "Penalty Blocked",
-        description: `${player.name} is too close to busting or would bust. Penalty cannot be applied.`,
+        description: `${playerToUpdate.name} is already busted, too close to busting, or would bust. Penalty cannot be applied.`,
         variant: "destructive"
       });
       return;
     }
 
-    const updatedPlayers = [...game.players];
-    updatedPlayers[playerIndex] = {
-      ...player,
-      currentScore: player.currentScore + PENALTY_POINTS,
-      // Optionally, log penalty to roundScores or a separate log
-      // roundScores: [...player.roundScores, PENALTY_POINTS] // if penalty affects round score
-    };
+    const updatedPlayers = game.players.map(p => {
+      if (p.id === playerIdToPenalize) {
+        return {
+          ...p,
+          currentScore: p.currentScore + PENALTY_POINTS,
+        };
+      }
+      return p;
+    });
     
-    // Consider how penalties affect aiGameRecords. For now, it's a direct score modification.
-    // If it should be part of a round, then a new round needs to be constructed.
-    // Let's assume penalty does not create a new "round" for aiGameRecords unless explicitly stated.
-
     const updatedGame = { ...game, players: updatedPlayers };
     setGame(updatedGame);
-    toast({ title: "Penalty Applied", description: `${player.name} received a ${PENALTY_POINTS} point penalty.`});
+    toast({ title: "Penalty Applied", description: `${playerToUpdate.name} received a ${PENALTY_POINTS} point penalty.`});
   };
 
   if (isLoading) {
@@ -222,7 +223,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               isShuffle={player.id === shufflePlayer?.id && activePlayersForShuffle.length > 1 && game.isActive && !player.isBusted}
               onPenalty={() => handlePenalty(player.id)}
               isGameActive={game.isActive}
-              isBeforeFirstRoundScored={game.currentRoundNumber === 1}
+              isBeforeFirstRoundScored={game.rounds.length === 0}
             />
           ))}
         </div>
@@ -265,3 +266,4 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
+

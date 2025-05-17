@@ -14,12 +14,13 @@ interface PlayerCardProps {
   isShuffle: boolean;
   onPenalty: () => void;
   isGameActive: boolean;
-  isBeforeFirstRoundScored: boolean; // New prop
+  isBeforeFirstRoundScored: boolean; 
 }
 
 export default function PlayerCard({ player, targetScore, isShuffle, onPenalty, isGameActive, isBeforeFirstRoundScored }: PlayerCardProps) {
   const isNearingBust = !player.isBusted && player.currentScore >= targetScore - 10 && player.currentScore < targetScore;
-  const canReceivePenalty = !player.isBusted && (player.currentScore + PENALTY_POINTS < targetScore);
+  // Penalty can be applied if player is not busted AND applying penalty won't make them bust or equal target score
+  const canReceivePenalty = isGameActive && !player.isBusted && (player.currentScore + PENALTY_POINTS < targetScore);
   
   // Perfect score is only relevant after the first round, if game is active, and score is 0
   const isPerfectGameCandidate = !isBeforeFirstRoundScored && player.currentScore === 0 && isGameActive && !player.isBusted;
@@ -62,7 +63,7 @@ export default function PlayerCard({ player, targetScore, isShuffle, onPenalty, 
             onClick={onPenalty}
             disabled={!canReceivePenalty}
             className="w-full hover:bg-destructive/10 hover:border-destructive hover:text-destructive"
-            title={canReceivePenalty ? `Add ${PENALTY_POINTS} points penalty` : `Cannot apply penalty (too close to bust or already busted)`}
+            title={canReceivePenalty ? `Add ${PENALTY_POINTS} points penalty` : `Cannot apply penalty (player busted, too close to bust, or game inactive)`}
           >
             <ShieldPlus className="mr-2 h-4 w-4" /> Penalty (+{PENALTY_POINTS})
           </Button>
@@ -71,3 +72,4 @@ export default function PlayerCard({ player, targetScore, isShuffle, onPenalty, 
     </Card>
   );
 }
+
