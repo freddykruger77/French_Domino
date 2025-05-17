@@ -18,7 +18,7 @@ const MAX_CACHED_PLAYERS = 10;
 export default function NewGameForm() {
   const router = useRouter();
   const { toast } = useToast();
-  const [numPlayers, setNumPlayers] = useState<number>(MIN_PLAYERS);
+  const [numPlayers, setNumPlayers] = useState<number>(4); // Default to 4 players
   const [playerNames, setPlayerNames] = useState<string[]>(Array(MAX_PLAYERS).fill(''));
   const [targetScore, setTargetScore] = useState<number>(DEFAULT_TARGET_SCORE);
   
