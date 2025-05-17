@@ -62,9 +62,17 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     if (gameToEnd.isActive && activePlayers.length <= 1 && gameToEnd.players.length > 1) {
       gameToEnd.isActive = false;
       gameToEnd.winnerId = activePlayers.length === 1 ? activePlayers[0].id : undefined; 
+      const winnerPlayer = gameToEnd.winnerId ? gameToEnd.players.find(p => p.id === gameToEnd.winnerId) : null;
+      let gameEndMessage = "Game ended. All remaining players busted or too few players left.";
+      if (winnerPlayer) {
+        gameEndMessage = `${winnerPlayer.name} wins!`;
+        if (winnerPlayer.currentScore === 0) {
+          gameEndMessage += " With a PERFECT GAME!";
+        }
+      }
       toast({
         title: "Game Over!",
-        description: gameToEnd.winnerId ? `${gameToEnd.players.find(p => p.id === gameToEnd.winnerId)?.name} wins!` : "Game ended. All remaining players busted or too few players left.",
+        description: gameEndMessage,
       });
     }
     return gameToEnd;
@@ -74,14 +82,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const updateGameStateAndCheckEnd = useCallback((updatedGameData: Partial<GameState>, playersListAfterAction: PlayerInGame[]) => {
     if (!game) return;
 
-    // Create the next game state using the provided players list that reflects the action's outcome
     let nextGameState: GameState = {
       ...game,
-      players: playersListAfterAction, // Use the accurately updated players list
-      ...updatedGameData, // Apply other game data changes (like penaltyLog, rounds)
+      players: playersListAfterAction, 
+      ...updatedGameData, 
     };
     
-    // Now, check if this action (and its effect on players) ends the game
     const finalGameState = checkAndEndGame(nextGameState, nextGameState.players);
     setGame(finalGameState);
   }, [game, setGame, checkAndEndGame]);
@@ -132,7 +138,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       return {
         ...player,
         currentScore: newTotalScore,
-        isBusted: newTotalScore >= game.targetScore, // Mark as busted if score reaches/exceeds target
+        isBusted: newTotalScore >= game.targetScore, 
         roundScores: [...player.roundScores, roundScore],
       };
     });
@@ -187,8 +193,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return {
           ...p,
           currentScore: newScore,
-          // Standard penalty does not change isBusted status directly here.
-          // Game ending is checked by updateGameStateAndCheckEnd.
         };
       }
       return p;
@@ -230,10 +234,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return player; 
       }
       
-      // Check if penalty would cause a bust
       if (player.currentScore + PENALTY_POINTS >= game.targetScore) {
         protectedFromBustCount++;
-        return player; // Player is protected, no change to score or bust status from this penalty
+        return player; 
       }
       
       penaltiesAppliedCount++;
@@ -248,31 +251,34 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       return {
         ...player,
         currentScore: newScoreForReceiver,
-        // isBusted status will be re-evaluated by checkAndEndGame if needed
       };
     });
     
     const issuerName = game.players.find(p=>p.id === boardPassIssuerId)?.name || 'Selected Player';
-    if (penaltiesAppliedCount === 0) {
-        let description = "No eligible players could receive board pass penalties without busting.";
-        if (protectedFromBustCount > 0 && game.players.filter(p => p.id !== boardPassIssuerId && !p.isBusted).length === protectedFromBustCount) {
-            description = `All ${protectedFromBustCount} potential receivers were protected as the penalty would cause them to bust.`;
-        }
-        toast({
+    if (penaltiesAppliedCount === 0 && protectedFromBustCount === 0 && game.players.filter(p => p.id !== boardPassIssuerId && !p.isBusted).length > 0) {
+         toast({
             title: "No Penalties Applied",
-            description: description,
+            description: `No eligible players could receive board pass penalties without busting.`,
             variant: "default"
         });
-    } else {
-        let toastDescription = `${issuerName} passed the board. ${penaltiesAppliedCount} players received ${PENALTY_POINTS} points.`;
-        if (protectedFromBustCount > 0) {
-            toastDescription += ` ${protectedFromBustCount} other player(s) were protected as the penalty would have caused them to bust.`;
+    } else if (penaltiesAppliedCount > 0 || protectedFromBustCount > 0) {
+        let toastDescription = `${issuerName} passed the board. `;
+        if (penaltiesAppliedCount > 0) {
+            toastDescription += `${penaltiesAppliedCount} player(s) received ${PENALTY_POINTS} points. `;
         }
+        if (protectedFromBustCount > 0) {
+            toastDescription += `${protectedFromBustCount} other player(s) were protected as the penalty would have caused them to bust.`;
+        }
+         if (penaltiesAppliedCount === 0 && protectedFromBustCount > 0 && game.players.filter(p => p.id !== boardPassIssuerId && !p.isBusted).length === protectedFromBustCount){
+            toastDescription = `${issuerName} passed the board. All ${protectedFromBustCount} potential receivers were protected as the penalty would cause them to bust. No penalties applied.`
+        }
+
         toast({
             title: "Board Pass Processed!",
-            description: toastDescription,
+            description: toastDescription.trim(),
         });
     }
+
 
     const updatedGameData: Partial<GameState> = {
       penaltyLog: [...(game.penaltyLog || []), ...newPenaltyEntries],
@@ -353,7 +359,11 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
          {winner && (
           <div className="mt-4 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-md flex items-center animate-pulse">
             <Crown className="h-8 w-8 mr-3 text-yellow-500 dark:text-yellow-400" />
-            <span className="text-xl font-semibold">{winner.name} wins the game! Congratulations!</span>
+            <span className="text-xl font-semibold">
+              {winner.name} wins the game!
+              {winner.currentScore === 0 && " With a PERFECT GAME!"}
+              {' '}Congratulations!
+            </span>
           </div>
         )}
         {!game.isActive && !winner && game.players.length > 0 && ( 
@@ -366,7 +376,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {game.players.map((player) => {
-            const isPerfectGameCandidate = !isBeforeFirstRoundScored && player.currentScore === 0 && game.isActive && !player.isBusted;
             const isThisPlayerShuffler = shufflerPlayerIds.length === 1 && shufflerPlayerIds[0] === player.id;
             const isThisPlayerTiedForShuffle = shufflerPlayerIds.length > 1 && shufflerPlayerIds.includes(player.id);
             const isCurrentPlayerWinner = winner?.id === player.id;
@@ -381,7 +390,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                 isBeforeFirstRoundScored={isBeforeFirstRoundScored}
                 isShuffler={isThisPlayerShuffler}
                 isTiedForShuffle={isThisPlayerTiedForShuffle}
-                isPerfectGameCandidate={isPerfectGameCandidate}
                 isWinner={isCurrentPlayerWinner}
               />
             );
@@ -458,7 +466,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Declare Board Pass</AlertDialogTitle>
               <AlertDialogDescription>
-                Select the player who successfully passed the board. All other eligible, active players (who will not bust as a result) will receive a {PENALTY_POINTS}-point penalty.
+                Select the player who successfully passed the board. All other eligible, active players (who will not bust as a result by having their score become {game.targetScore} or more) will receive a {PENALTY_POINTS}-point penalty.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4 py-4">

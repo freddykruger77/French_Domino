@@ -17,7 +17,6 @@ interface PlayerCardProps {
   isBeforeFirstRoundScored: boolean;
   isShuffler: boolean;
   isTiedForShuffle: boolean;
-  isPerfectGameCandidate: boolean;
   isWinner?: boolean;
 }
 
@@ -29,7 +28,6 @@ export default function PlayerCard({
   isBeforeFirstRoundScored,
   isShuffler,
   isTiedForShuffle,
-  isPerfectGameCandidate,
   isWinner,
 }: PlayerCardProps) {
   const isNearingBust = !player.isBusted && player.currentScore >= targetScore - 10 && player.currentScore < targetScore;
@@ -38,18 +36,16 @@ export default function PlayerCard({
   let statusBadge = null;
   if (player.isBusted) {
     statusBadge = <Badge variant="destructive" className="flex items-center gap-1"><Skull className="h-3 w-3" /> Busted</Badge>;
-  } else if (isGameActive) { // Only show other badges if game is active and player not busted
-    if (!isBeforeFirstRoundScored) { // Logic for after first round
+  } else if (isGameActive) { 
+    if (!isBeforeFirstRoundScored) { 
       if (isShuffler) {
         statusBadge = <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-100 dark:bg-orange-900/50 flex items-center gap-1 text-base px-3 py-1 shadow-md"><Zap className="h-4 w-4" /> SHUFFLE</Badge>;
       } else if (isTiedForShuffle) {
         statusBadge = <Badge variant="outline" className="border-purple-500 text-purple-600 bg-purple-100 dark:bg-purple-900/50 flex items-center gap-1 text-sm px-2 py-1 shadow-md"><Users className="h-4 w-4" /> TIE (Shuffle/Draw Last)</Badge>;
-      } else if (isPerfectGameCandidate) {
-        statusBadge = <Badge variant="outline" className="border-green-500 text-green-600 flex items-center gap-1"><Crown className="h-3 w-3" /> Perfect Score!</Badge>;
       } else if (isNearingBust) {
         statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
       }
-    } else { // Logic for before first round (isBeforeFirstRoundScored is true)
+    } else { 
       if (isNearingBust) { 
         statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
       }
@@ -97,3 +93,4 @@ export default function PlayerCard({
     </Card>
   );
 }
+
