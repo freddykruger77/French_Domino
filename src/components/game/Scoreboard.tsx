@@ -58,14 +58,15 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const checkAndEndGame = useCallback((currentGame: GameState, updatedPlayersList: PlayerInGame[]): GameState => {
     const gameToEnd = { ...currentGame, players: updatedPlayersList };
   
-    const newlyBustedPlayers = updatedPlayersList.filter(p => p.isBusted && !currentGame.players.find(op => op.id === p.id)?.isBusted);
-    const anyPlayerBusted = updatedPlayersList.some(p => p.isBusted);
-  
-    if (gameToEnd.isActive && anyPlayerBusted) {
+    const anyPlayerBustedInThisAction = updatedPlayersList.some(p => p.isBusted && !currentGame.players.find(op => op.id === p.id)?.isBusted);
+    const anyPlayerWasAlreadyBusted = currentGame.players.some(p => p.isBusted);
+    const gameShouldEndNow = anyPlayerBustedInThisAction || (anyPlayerWasAlreadyBusted && gameToEnd.isActive); // End if new bust, or if already bust and game was active
+
+    if (gameToEnd.isActive && gameShouldEndNow && updatedPlayersList.some(p => p.isBusted)) {
       gameToEnd.isActive = false;
       let gameEndMessage = "Game Over!";
-      const bustedPlayerNames = updatedPlayersList.filter(p => p.isBusted).map(p => p.name).join(', ');
-  
+      
+      const allBustedInFinalState = updatedPlayersList.filter(p => p.isBusted).map(p => p.name);
       const nonBustedPlayers = updatedPlayersList.filter(p => !p.isBusted);
   
       if (nonBustedPlayers.length > 0) {
@@ -73,14 +74,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         gameToEnd.winnerId = sortedNonBustedPlayers[0].id;
         const winnerPlayer = sortedNonBustedPlayers[0];
         
-        gameEndMessage = `${bustedPlayerNames ? bustedPlayerNames : 'A player'} busted. ${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
+        gameEndMessage = `${allBustedInFinalState.length > 0 ? `${allBustedInFinalState.join(', ')} busted.` : ''} ${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
         if (winnerPlayer.currentScore === 0) {
           gameEndMessage += " A PERFECT GAME!";
         }
       } else {
-        // All players busted
         gameToEnd.winnerId = undefined;
-        gameEndMessage = `${bustedPlayerNames} busted. As all players are now busted, there is no winner.`;
+        gameEndMessage = `All players busted: ${allBustedInFinalState.join(', ')}. There is no winner.`;
       }
       
       toast({
@@ -178,6 +178,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const initialScores: Record<string, string> = {};
     game.players.forEach(p => initialScores[p.id] = ''); 
     setCurrentRoundScores(initialScores);
+    // setShowAddScoreDialog(false); // Already handled by updateGameStateAndCheckEnd if game becomes inactive
   };
 
   const handlePenalty = (playerIdToPenalize: string) => {
@@ -235,7 +236,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     updateGameStateAndCheckEnd(updatedGameData, playersAfterPenalty);
     const updatedPlayer = playersAfterPenalty[playerIndex];
     let penaltyMessage = `${playerToUpdate.name} received a ${PENALTY_POINTS} point penalty. New score: ${updatedPlayer.currentScore}.`;
-    if (updatedPlayer.isBusted && !playerToUpdate.isBusted) { // Only add if newly busted
+    if (updatedPlayer.isBusted && !playerToUpdate.isBusted) { 
       penaltyMessage += ` ${playerToUpdate.name} is now BUSTED!`;
     }
     toast({ title: "Penalty Applied", description: penaltyMessage});
@@ -255,6 +256,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
     let penaltiesAppliedCount = 0;
     let protectedFromPenaltyCount = 0;
+    let newlyBustedCountByBoardPass = 0;
     const newPenaltyEntries: PenaltyLogEntry[] = [];
 
     const playersAfterBoardPass = game.players.map(player => {
@@ -276,6 +278,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         reason: 'Board Pass (Receiver)'
       });
 
+      const justBusted = !player.isBusted && newScoreForReceiver >= game.targetScore;
+      if(justBusted) newlyBustedCountByBoardPass++;
+
       return {
         ...player,
         currentScore: newScoreForReceiver,
@@ -284,14 +289,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     });
     
     const issuerName = game.players.find(p=>p.id === boardPassIssuerId)?.name || 'Selected Player';
-    let bustedByBoardPassCount = 0;
-    playersAfterBoardPass.forEach(p => {
-        const originalPlayerState = game.players.find(op => op.id === p.id);
-        if (p.id !== boardPassIssuerId && originalPlayerState && !originalPlayerState.isBusted && p.isBusted) {
-            bustedByBoardPassCount++;
-        }
-    });
-
+    
     let toastDescription = `${issuerName} passed the board. `;
     if (penaltiesAppliedCount > 0) {
         toastDescription += `${penaltiesAppliedCount} player(s) received ${PENALTY_POINTS} points. `;
@@ -299,16 +297,22 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     if (protectedFromPenaltyCount > 0) {
         toastDescription += `${protectedFromPenaltyCount} player(s) were protected from penalty. `;
     }
-    if (bustedByBoardPassCount > 0) {
-        toastDescription += `${bustedByBoardPassCount} player(s) busted as a result. `;
+     if (newlyBustedCountByBoardPass > 0) {
+        toastDescription += `${newlyBustedCountByBoardPass} player(s) busted as a result. `;
     }
     
-    const potentialReceiversExist = game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted);
+    const potentialReceiversExist = game.players.some(p => 
+        p.id !== boardPassIssuerId && 
+        !p.isBusted && 
+        p.currentScore < game.targetScore - PENALTY_POINTS
+    );
+
     if (penaltiesAppliedCount === 0 && protectedFromPenaltyCount === 0 && potentialReceiversExist) {
-        toastDescription += `No other active players were eligible to receive a penalty or all were protected.`;
+        toastDescription += `No other active players were eligible to receive a penalty (all were protected).`;
     } else if (penaltiesAppliedCount === 0 && protectedFromPenaltyCount === 0 && !potentialReceiversExist) {
          toastDescription += `No other active players to penalize or protect.`;
     }
+
 
     toast({
         title: "Board Pass Processed!",
@@ -321,6 +325,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterBoardPass);
     setBoardPassIssuerId(null);
+    // setShowBoardPassDialog(false); // Already handled by updateGameStateAndCheckEnd if game becomes inactive
   };
 
 
@@ -358,9 +363,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButton = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                      p.id !== boardPassIssuerId && 
+                                      p.id !== boardPassIssuerId && // ensure there's someone else
                                       !p.isBusted && 
-                                      p.currentScore < game.targetScore - PENALTY_POINTS
+                                      p.currentScore < game.targetScore - PENALTY_POINTS // and they can receive penalty
                                    );
 
   const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
@@ -387,21 +392,33 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           )}
         </div>
          {gameIsOver && winner && (
-          <div className="mt-4 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-md flex items-center">
-            <Crown className="h-8 w-8 mr-3 text-yellow-500 dark:text-yellow-400" />
-            <span className="text-xl font-semibold">
-              {winner.name} wins with a score of {winner.currentScore}!
-              {winner.currentScore === 0 && " A PERFECT GAME!"}
-              {' '}Congratulations!
-            </span>
+          <div className="mt-4 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-md flex items-start">
+            <Crown className="h-8 w-8 mr-3 text-yellow-500 dark:text-yellow-400 flex-shrink-0" />
+            <div className="flex flex-col text-left">
+              <span className="text-xl font-semibold">
+                {winner.name} wins with a score of {winner.currentScore}!
+                {winner.currentScore === 0 && " A PERFECT GAME!"}
+                {' '}Congratulations!
+              </span>
+              {game.players.filter(p => p.isBusted).length > 0 && (
+                <span className="text-sm mt-1">
+                  (Busted: {game.players.filter(p => p.isBusted).map(p => p.name).join(', ')})
+                </span>
+              )}
+            </div>
           </div>
         )}
         {gameIsOver && !winner && ( 
-           <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md flex items-center">
-            <XCircle className="h-6 w-6 mr-2" />
-            <span className="font-semibold">
-              Game Over. All players busted.
-            </span>
+           <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md flex items-start">
+            <XCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
+            <div className="flex flex-col text-left">
+              <span className="font-semibold">Game Over. No winner as all players busted.</span>
+               {game.players.filter(p => p.isBusted).length > 0 && (
+                <span className="text-sm mt-1">
+                  Busted: {game.players.filter(p => p.isBusted).map(p => p.name).join(', ')}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </CardHeader>
@@ -529,7 +546,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                 <p className="text-sm text-destructive text-center">All players are currently busted. Board pass cannot be declared.</p>
               )}
                {game.isActive && !canEnableBoardPassButton && potentialBoardPassIssuers.length > 0 && (
-                 <p className="text-sm text-destructive text-center">No other active players eligible to receive a penalty (either busted or too close to target for penalty).</p>
+                 <p className="text-sm text-destructive text-center">No other active players eligible to receive a penalty (either busted or too close to target for penalty, or no other players exist).</p>
                )}
             </div>
             <AlertDialogFooter>
@@ -548,3 +565,4 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
+
