@@ -84,6 +84,16 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const handleAddScoreSubmit = () => {
     if (!game) return;
 
+    if (!game.isActive) {
+      toast({
+        title: "Game Over",
+        description: "Cannot add scores, the game has already ended.",
+        variant: "destructive"
+      });
+      setShowAddScoreDialog(false); // Ensure dialog is closed
+      return;
+    }
+
     const scoresForRound: GameRoundScore = {};
     let isValid = true;
     game.players.forEach(player => {
@@ -95,7 +105,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         }
         scoresForRound[player.id] = score;
       } else {
-        scoresForRound[player.id] = 0;
+        scoresForRound[player.id] = 0; // Ensure busted players get 0 for this round's score in records
       }
     });
 
@@ -125,12 +135,15 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     updatePlayerScores(updatedPlayers, newRoundData);
     setShowAddScoreDialog(false);
     const initialScores: Record<string, string> = {};
-    game.players.forEach(p => initialScores[p.id] = '');
+    game.players.forEach(p => initialScores[p.id] = ''); // Reset for next round
     setCurrentRoundScores(initialScores);
   };
 
   const handlePenalty = (playerIdToPenalize: string) => {
-    if (!game || !game.isActive) return;
+    if (!game || !game.isActive) {
+      toast({ title: "Game Inactive", description: "Cannot apply penalty, game is not active.", variant: "destructive"});
+      return;
+    }
 
     const playerIndex = game.players.findIndex(p => p.id === playerIdToPenalize);
 
@@ -189,6 +202,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     : null;
 
   const winner = !game.isActive && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
+  const isBeforeFirstRoundScored = game.rounds.length === 0;
 
   return (
     <Card className="w-full shadow-xl">
@@ -210,7 +224,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <span className="text-xl font-semibold">{winner.name} wins the game! Congratulations!</span>
           </div>
         )}
-        {!game.isActive && !winner && (
+        {!game.isActive && !winner && game.players.length > 0 && ( // Ensure game has players before showing this
            <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md flex items-center">
             <XCircle className="h-6 w-6 mr-2" />
             <span className="font-semibold">Game Over. No clear winner or all players busted.</span>
@@ -227,7 +241,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               isShuffle={player.id === shufflePlayer?.id && activePlayersForShuffle.length > 1 && game.isActive && !player.isBusted}
               onPenalty={() => handlePenalty(player.id)}
               isGameActive={game.isActive}
-              isBeforeFirstRoundScored={game.rounds.length === 0}
+              isBeforeFirstRoundScored={isBeforeFirstRoundScored}
             />
           ))}
         </div>
@@ -272,6 +286,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                       onChange={(e) => setCurrentRoundScores(prev => ({...prev, [player.id]: e.target.value}))}
                       className="w-full max-w-[150px]"
                       placeholder="Score"
+                      disabled={!game.isActive} // Also disable input if game is not active
                     />
                   </div>
                 )
@@ -279,7 +294,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={handleAddScoreSubmit}>Submit Scores</AlertDialogAction>
+              <AlertDialogAction onClick={handleAddScoreSubmit} disabled={!game.isActive}>Submit Scores</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -288,3 +303,4 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
+
