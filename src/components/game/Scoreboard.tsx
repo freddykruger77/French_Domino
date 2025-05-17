@@ -7,7 +7,7 @@ import useLocalStorage from '@/hooks/useLocalStorage';
 import PlayerCard from './PlayerCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History, Gamepad2 } from 'lucide-react';
 import { LOCAL_STORAGE_KEYS, PENALTY_POINTS } from '@/lib/constants';
 import {
   AlertDialog,
@@ -23,6 +23,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import Link from "next/link";
 import RoundHistoryTable from './RoundHistoryTable';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
@@ -90,7 +91,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         description: "Cannot add scores, the game has already ended.",
         variant: "destructive"
       });
-      setShowAddScoreDialog(false); // Ensure dialog is closed
+      setShowAddScoreDialog(false); 
       return;
     }
 
@@ -105,7 +106,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         }
         scoresForRound[player.id] = score;
       } else {
-        scoresForRound[player.id] = 0; // Ensure busted players get 0 for this round's score in records
+        scoresForRound[player.id] = 0; 
       }
     });
 
@@ -135,7 +136,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     updatePlayerScores(updatedPlayers, newRoundData);
     setShowAddScoreDialog(false);
     const initialScores: Record<string, string> = {};
-    game.players.forEach(p => initialScores[p.id] = ''); // Reset for next round
+    game.players.forEach(p => initialScores[p.id] = ''); 
     setCurrentRoundScores(initialScores);
   };
 
@@ -174,7 +175,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     });
 
     const newPenaltyLogEntry: PenaltyLogEntry = {
-      roundNumber: game.currentRoundNumber, // Penalty associated with the current round period
+      roundNumber: game.currentRoundNumber, 
       playerId: playerToUpdate.id,
       points: PENALTY_POINTS,
     };
@@ -196,13 +197,19 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     return <Card><CardHeader><CardTitle>Error</CardTitle></CardHeader><CardContent>Game data could not be loaded.</CardContent></Card>;
   }
   
-  const activePlayersForShuffle = game.players.filter(p => !p.isBusted && game.isActive);
-  const shufflePlayer = activePlayersForShuffle.length > 0 
-    ? activePlayersForShuffle.reduce((highest, p) => p.currentScore > highest.currentScore ? p : highest, activePlayersForShuffle[0])
-    : null;
+  const isBeforeFirstRoundScored = game.rounds.length === 0;
+  
+  const activeNonBustedPlayers = game.players.filter(p => !p.isBusted && game.isActive);
+  let shufflerPlayerIds: string[] = [];
+
+  if (game.isActive && !isBeforeFirstRoundScored && activeNonBustedPlayers.length > 1) {
+    const highestScore = Math.max(...activeNonBustedPlayers.map(p => p.currentScore));
+    shufflerPlayerIds = activeNonBustedPlayers
+      .filter(p => p.currentScore === highestScore)
+      .map(p => p.id);
+  }
 
   const winner = !game.isActive && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
-  const isBeforeFirstRoundScored = game.rounds.length === 0;
 
   return (
     <Card className="w-full shadow-xl">
@@ -224,7 +231,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <span className="text-xl font-semibold">{winner.name} wins the game! Congratulations!</span>
           </div>
         )}
-        {!game.isActive && !winner && game.players.length > 0 && ( // Ensure game has players before showing this
+        {!game.isActive && !winner && game.players.length > 0 && ( 
            <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md flex items-center">
             <XCircle className="h-6 w-6 mr-2" />
             <span className="font-semibold">Game Over. No clear winner or all players busted.</span>
@@ -233,17 +240,25 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {game.players.map((player) => (
-            <PlayerCard
-              key={player.id}
-              player={player}
-              targetScore={game.targetScore}
-              isShuffle={player.id === shufflePlayer?.id && activePlayersForShuffle.length > 1 && game.isActive && !player.isBusted}
-              onPenalty={() => handlePenalty(player.id)}
-              isGameActive={game.isActive}
-              isBeforeFirstRoundScored={isBeforeFirstRoundScored}
-            />
-          ))}
+          {game.players.map((player) => {
+            const isPerfectGameCandidate = !isBeforeFirstRoundScored && player.currentScore === 0 && game.isActive && !player.isBusted;
+            const isThisPlayerShuffler = shufflerPlayerIds.length === 1 && shufflerPlayerIds[0] === player.id;
+            const isThisPlayerTiedForShuffle = shufflerPlayerIds.length > 1 && shufflerPlayerIds.includes(player.id);
+
+            return (
+              <PlayerCard
+                key={player.id}
+                player={player}
+                targetScore={game.targetScore}
+                onPenalty={() => handlePenalty(player.id)}
+                isGameActive={game.isActive}
+                isBeforeFirstRoundScored={isBeforeFirstRoundScored}
+                isShuffler={isThisPlayerShuffler}
+                isTiedForShuffle={isThisPlayerTiedForShuffle}
+                isPerfectGameCandidate={isPerfectGameCandidate}
+              />
+            );
+          })}
         </div>
 
         <Accordion type="single" collapsible className="w-full">
@@ -264,6 +279,15 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           </AccordionItem>
         </Accordion>
 
+        {!game.isActive && (
+          <div className="mt-8 text-center">
+            <Link href="/new-game" passHref>
+              <Button size="lg" variant="default" className="bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white dark:text-primary-foreground px-8 py-6 text-lg">
+                <Gamepad2 className="mr-2 h-6 w-6" /> Start New Game
+              </Button>
+            </Link>
+          </div>
+        )}
 
         <AlertDialog open={showAddScoreDialog} onOpenChange={setShowAddScoreDialog}>
           <AlertDialogContent>
@@ -286,7 +310,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                       onChange={(e) => setCurrentRoundScores(prev => ({...prev, [player.id]: e.target.value}))}
                       className="w-full max-w-[150px]"
                       placeholder="Score"
-                      disabled={!game.isActive} // Also disable input if game is not active
+                      disabled={!game.isActive} 
                     />
                   </div>
                 )
@@ -303,4 +327,3 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
-

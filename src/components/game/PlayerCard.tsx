@@ -5,35 +5,52 @@ import type { PlayerInGame } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, ShieldPlus, User, Zap, Skull, Crown } from 'lucide-react'; // Zap for shuffle, Skull for busted, Crown for perfect game
+import { AlertTriangle, ShieldPlus, User, Zap, Skull, Crown, Users } from 'lucide-react';
 import { PENALTY_POINTS } from '@/lib/constants';
 
 interface PlayerCardProps {
   player: PlayerInGame;
   targetScore: number;
-  isShuffle: boolean;
   onPenalty: () => void;
   isGameActive: boolean;
-  isBeforeFirstRoundScored: boolean; 
+  isBeforeFirstRoundScored: boolean;
+  isShuffler: boolean;
+  isTiedForShuffle: boolean;
+  isPerfectGameCandidate: boolean;
 }
 
-export default function PlayerCard({ player, targetScore, isShuffle, onPenalty, isGameActive, isBeforeFirstRoundScored }: PlayerCardProps) {
+export default function PlayerCard({
+  player,
+  targetScore,
+  onPenalty,
+  isGameActive,
+  isBeforeFirstRoundScored,
+  isShuffler,
+  isTiedForShuffle,
+  isPerfectGameCandidate,
+}: PlayerCardProps) {
   const isNearingBust = !player.isBusted && player.currentScore >= targetScore - 10 && player.currentScore < targetScore;
-  // Penalty can be applied if player is not busted AND applying penalty won't make them bust or equal target score
   const canReceivePenalty = isGameActive && !player.isBusted && (player.currentScore + PENALTY_POINTS < targetScore);
   
-  // Perfect score is only relevant after the first round, if game is active, and score is 0
-  const isPerfectGameCandidate = !isBeforeFirstRoundScored && player.currentScore === 0 && isGameActive && !player.isBusted;
-
   let statusBadge = null;
   if (player.isBusted) {
     statusBadge = <Badge variant="destructive" className="flex items-center gap-1"><Skull className="h-3 w-3" /> Busted</Badge>;
-  } else if (!isBeforeFirstRoundScored && isShuffle) { // Display shuffle only after first round scores
-    statusBadge = <Badge variant="outline" className="border-orange-500 text-orange-600 flex items-center gap-1"><Zap className="h-3 w-3" /> Shuffle</Badge>;
-  } else if (isNearingBust) {
-    statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
-  } else if (isPerfectGameCandidate) { // Display perfect score candidate only after first round scores
-     statusBadge = <Badge variant="outline" className="border-green-500 text-green-600 flex items-center gap-1"><Crown className="h-3 w-3" /> Perfect Score!</Badge>;
+  } else if (isGameActive) { // Only show other badges if game is active and player not busted
+    if (!isBeforeFirstRoundScored) { // Logic for after first round
+      if (isShuffler) {
+        statusBadge = <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-100 dark:bg-orange-900/50 flex items-center gap-1 text-base px-3 py-1 shadow-md"><Zap className="h-4 w-4" /> SHUFFLE</Badge>;
+      } else if (isTiedForShuffle) {
+        statusBadge = <Badge variant="outline" className="border-purple-500 text-purple-600 bg-purple-100 dark:bg-purple-900/50 flex items-center gap-1 text-sm px-2 py-1 shadow-md"><Users className="h-4 w-4" /> TIE (Shuffle/Draw Last)</Badge>;
+      } else if (isPerfectGameCandidate) {
+        statusBadge = <Badge variant="outline" className="border-green-500 text-green-600 flex items-center gap-1"><Crown className="h-3 w-3" /> Perfect Score!</Badge>;
+      } else if (isNearingBust) {
+        statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
+      }
+    } else { // Logic for before first round (isBeforeFirstRoundScored is true)
+      if (isNearingBust) { 
+        statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
+      }
+    }
   }
 
 
@@ -72,4 +89,3 @@ export default function PlayerCard({ player, targetScore, isShuffle, onPenalty, 
     </Card>
   );
 }
-
