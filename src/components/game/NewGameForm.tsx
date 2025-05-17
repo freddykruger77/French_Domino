@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, type FormEvent } from 'react';
@@ -73,6 +74,7 @@ export default function NewGameForm() {
       currentRoundNumber: 1,
       isActive: true,
       createdAt: new Date().toISOString(),
+      penaltyLog: [], // Initialize penalty log
       aiGameRecords: [],
     };
 
@@ -98,7 +100,7 @@ export default function NewGameForm() {
         .slice(0, MAX_CACHED_PLAYERS)
     );
     
-    toast({ title: "Game Created!", description: `Game "${newGameId}" started successfully.` });
+    toast({ title: "Game Created!", description: `Game "${newGameId.substring(0,10)}..." started successfully.` });
     router.push(`/game/${newGameId}`);
   };
 

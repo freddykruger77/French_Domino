@@ -1,3 +1,4 @@
+
 export interface Player {
   id: string;
   name: string;
@@ -15,7 +16,13 @@ export interface GameRoundScore {
 
 export interface GameRound {
   roundNumber: number;
-  scores: GameRoundScore; 
+  scores: GameRoundScore;
+}
+
+export interface PenaltyLogEntry {
+  roundNumber: number; // The round number *during* or *after* which the penalty was applied (game.currentRoundNumber at time of penalty)
+  playerId: string;
+  points: number;
 }
 
 export interface GameState {
@@ -27,6 +34,7 @@ export interface GameState {
   isActive: boolean;
   createdAt: string; // ISO date string
   winnerId?: string; // playerId
+  penaltyLog?: PenaltyLogEntry[]; // Log of penalties applied
   // For AI collusion detection
   // This matches the AI input structure DetectCollusionInput.gameRecords
   // playerScores array needs to maintain consistent player order across rounds.
@@ -40,7 +48,7 @@ export interface GameState {
 export interface TournamentPlayerStats extends Player {
   tournamentGamesWon: number;
   tournamentTimesBusted: number;
-  averageRank: number; 
+  averageRank: number;
   totalPoints: number;
   roundsIn90sWithoutBusting: number;
 }
@@ -48,9 +56,9 @@ export interface TournamentPlayerStats extends Player {
 export interface Tournament {
   id: string;
   name: string;
-  gameIds: string[]; 
+  gameIds: string[];
   players: TournamentPlayerStats[];
-  targetScore: number; 
+  targetScore: number;
   createdAt: string;
   isActive: boolean;
   winnerId?: string; // playerId
