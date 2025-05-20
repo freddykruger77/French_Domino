@@ -8,21 +8,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, MAX_PLAYERS, LOCAL_STORAGE_KEYS } from '@/lib/constants';
+import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, LOCAL_STORAGE_KEYS } from '@/lib/constants';
 import type { Tournament, TournamentPlayerStats, CachedPlayer, Player, PlayerParticipationMode } from '@/lib/types';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import { PlusCircle, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const MAX_CACHED_PLAYERS = 10;
+const MAX_CACHED_PLAYERS = 10; // Remains for caching logic, not a limit on tournament players.
+const INITIAL_DEFAULT_PLAYERS = 4; // Default for the form input
 
 export default function NewTournamentForm() {
   const router = useRouter();
   const { toast } = useToast();
   
   const [tournamentName, setTournamentName] = useState<string>('');
-  const [numPlayers, setNumPlayers] = useState<number>(4);
-  const [playerNames, setPlayerNames] = useState<string[]>(Array(MAX_PLAYERS).fill(''));
+  const [numPlayers, setNumPlayers] = useState<number>(INITIAL_DEFAULT_PLAYERS);
+  const [playerNames, setPlayerNames] = useState<string[]>(Array(INITIAL_DEFAULT_PLAYERS).fill(''));
   const [targetScore, setTargetScore] = useState<number>(DEFAULT_TARGET_SCORE);
   const [playerParticipationMode, setPlayerParticipationMode] = useState<PlayerParticipationMode>('fixed_roster');
   
@@ -30,15 +31,51 @@ export default function NewTournamentForm() {
   const [activeTournaments, setActiveTournaments] = useLocalStorage<string[]>(LOCAL_STORAGE_KEYS.ACTIVE_TOURNAMENTS_LIST, []);
 
   useEffect(() => {
-    const initialNames = Array(MAX_PLAYERS).fill('');
+    // Pre-fill names from cache if available, accommodating current numPlayers
+    const initialNames = Array(numPlayers).fill('');
     cachedPlayers
       .sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime())
       .slice(0, numPlayers)
       .forEach((p, i) => {
-        initialNames[i] = p.name;
+        if (i < numPlayers) {
+          initialNames[i] = p.name;
+        }
       });
-    setPlayerNames(initialNames);
+    
+    // Ensure playerNames array matches numPlayers, preserving existing names
+    setPlayerNames(currentNames => {
+        const newNames = Array(numPlayers).fill('');
+        for (let i = 0; i < numPlayers; i++) {
+            if (initialNames[i]) {
+                newNames[i] = initialNames[i];
+            } else if (currentNames[i]) {
+                 newNames[i] = currentNames[i];
+            }
+        }
+        return newNames;
+    });
+
   }, [cachedPlayers, numPlayers]);
+
+
+  const handleNumPlayersChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let newCount = parseInt(e.target.value, 10);
+    if (isNaN(newCount) || newCount < MIN_PLAYERS) {
+      newCount = MIN_PLAYERS;
+    }
+    setNumPlayers(newCount);
+
+    // Adjust playerNames array size
+    setPlayerNames(currentNames => {
+      const newPlayerNamesArray = Array(newCount).fill('');
+      for (let i = 0; i < newCount; i++) {
+        if (i < currentNames.length) {
+          newPlayerNamesArray[i] = currentNames[i];
+        }
+      }
+      return newPlayerNamesArray;
+    });
+  };
 
   const handlePlayerNameChange = (index: number, name: string) => {
     const newPlayerNames = [...playerNames];
@@ -58,15 +95,18 @@ export default function NewTournamentForm() {
       return;
     }
 
-    const currentTournamentPlayers: Player[] = playerNames.slice(0, numPlayers).map((name, index) => ({
-      id: `player-tourney-${Date.now()}-${index}`,
-      name: name.trim() || `Player ${index + 1}`,
-    }));
-
-    if (currentTournamentPlayers.some(p => !p.name)) {
-      toast({ title: "Validation Error", description: "All active players must have a name.", variant: "destructive" });
+    const actualPlayerNames = playerNames.slice(0, numPlayers);
+    if (actualPlayerNames.some(name => !name.trim())) {
+      toast({ title: "Validation Error", description: "All players must have a name.", variant: "destructive" });
       return;
     }
+
+
+    const currentTournamentPlayers: Player[] = actualPlayerNames.map((name, index) => ({
+      id: `player-tourney-${Date.now()}-${index}`,
+      name: name.trim(),
+    }));
+
 
     const tournamentPlayerStats: TournamentPlayerStats[] = currentTournamentPlayers.map(player => ({
       ...player,
@@ -74,7 +114,7 @@ export default function NewTournamentForm() {
       tournamentTimesBusted: 0,
       averageRank: 0,
       totalPoints: 0,
-      roundsIn90sWithoutBusting: 0,
+      roundsIn90sWithoutBusting: 0, // Placeholder, logic TBD
       gamesPlayed: 0,
     }));
     
@@ -130,21 +170,15 @@ export default function NewTournamentForm() {
 
       <div>
         <Label htmlFor="numPlayers" className="text-base">Number of Players</Label>
-        <Select
-          value={String(numPlayers)}
-          onValueChange={(value) => setNumPlayers(Number(value))}
-        >
-          <SelectTrigger id="numPlayers" className="w-full mt-1">
-            <SelectValue placeholder="Select number of players" />
-          </SelectTrigger>
-          <SelectContent>
-            {[...Array(MAX_PLAYERS - MIN_PLAYERS + 1)].map((_, i) => (
-              <SelectItem key={MIN_PLAYERS + i} value={String(MIN_PLAYERS + i)}>
-                {MIN_PLAYERS + i} Players
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Input
+          id="numPlayers"
+          type="number"
+          value={numPlayers}
+          onChange={handleNumPlayersChange}
+          min={MIN_PLAYERS}
+          className="w-full mt-1"
+          placeholder={`Minimum ${MIN_PLAYERS} players`}
+        />
       </div>
 
       <div className="space-y-4">
@@ -219,3 +253,4 @@ export default function NewTournamentForm() {
     </form>
   );
 }
+
