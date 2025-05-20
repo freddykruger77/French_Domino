@@ -1,9 +1,40 @@
+
+"use client";
+
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gamepad2, History, Trophy, Users, Eye } from "lucide-react";
+import { Gamepad2, History, Trophy, Users, Eye, ListChecks, Play } from "lucide-react";
 import Link from "next/link";
+import type { GameState } from '@/lib/types';
+import { LOCAL_STORAGE_KEYS } from '@/lib/constants';
 
 export default function HomePage() {
+  const [activeGames, setActiveGames] = useState<GameState[]>([]);
+  const [isLoadingActiveGames, setIsLoadingActiveGames] = useState(true);
+
+  useEffect(() => {
+    const gameIdsString = localStorage.getItem(LOCAL_STORAGE_KEYS.ACTIVE_GAMES_LIST);
+    if (gameIdsString) {
+      try {
+        const gameIds: string[] = JSON.parse(gameIdsString);
+        const gamesData: GameState[] = gameIds.map(id => {
+          const gameString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${id}`);
+          return gameString ? JSON.parse(gameString) as GameState : null;
+        })
+        .filter(game => game !== null && game.isActive) as GameState[];
+        
+        // Sort by creation date, most recent first
+        gamesData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setActiveGames(gamesData);
+      } catch (error) {
+        console.error("Error loading or parsing active games from local storage:", error);
+        setActiveGames([]);
+      }
+    }
+    setIsLoadingActiveGames(false);
+  }, []);
+
   const features = [
     {
       title: "New Game",
@@ -38,7 +69,43 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center py-8 md:py-12">
+    <div className="flex flex-col items-center justify-center py-8 md:py-12 space-y-8">
+      {!isLoadingActiveGames && activeGames.length > 0 && (
+        <Card className="w-full max-w-2xl shadow-xl border-primary border-2">
+          <CardHeader>
+            <CardTitle className="text-2xl font-bold text-primary flex items-center gap-2">
+              <ListChecks className="h-7 w-7" />
+              Resume Active Game
+            </CardTitle>
+            <CardDescription>You have ongoing games. Pick up where you left off!</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {activeGames.map(game => (
+              <Card key={game.id} className="p-4 bg-secondary/30">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div>
+                    <h4 className="font-semibold text-lg text-primary-foreground">
+                      Game ID: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 6 : game.id.length)}
+                    </h4>
+                    <p className="text-sm text-muted-foreground">
+                      Players: {game.players.map(p => p.name).join(', ')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Started: {new Date(game.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <Link href={`/game/${game.id}`} passHref>
+                    <Button variant="default" size="lg" className="w-full sm:w-auto">
+                      <Play className="mr-2 h-5 w-5" /> Resume
+                    </Button>
+                  </Link>
+                </div>
+              </Card>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="w-full max-w-2xl shadow-xl">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl md:text-4xl font-bold text-primary">Welcome!</CardTitle>
