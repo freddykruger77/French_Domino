@@ -3,10 +3,10 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trophy, Users, Cog, BarChart3, Info, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Trophy, Users, Cog, BarChart3, Info, AlertTriangle, PlusCircle, Gamepad2, List } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo, use } from "react";
-import type { Tournament, TournamentPlayerStats } from '@/lib/types';
+import type { Tournament, TournamentPlayerStats, GameState } from '@/lib/types';
 import { LOCAL_STORAGE_KEYS, DEFAULT_TARGET_SCORE, DEFAULT_WIN_BONUS_K, DEFAULT_BUST_PENALTY_K, DEFAULT_PG_KICKER_K } from '@/lib/constants';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -58,15 +58,15 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
   const { id: tournamentId } = resolvedParams;
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [linkedGames, setLinkedGames] = useState<GameState[]>([]);
 
   useEffect(() => {
-    setIsLoading(true); // Set loading true at the start
+    setIsLoading(true); 
     if (tournamentId) {
       const tournamentString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournamentId}`);
       if (tournamentString) {
         try {
           const parsedTournament = JSON.parse(tournamentString) as Partial<Tournament>;
-          // Ensure all potentially missing fields from older data have defaults
           const completeTournament: Tournament = {
             id: parsedTournament.id || tournamentId,
             name: parsedTournament.name ?? 'Unnamed Tournament',
@@ -81,19 +81,28 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
             pgKickerK: parsedTournament.pgKickerK ?? DEFAULT_PG_KICKER_K,
           };
           setTournament(completeTournament);
+
+          // Load linked games
+          const gamesData: GameState[] = (completeTournament.gameIds || []).map(gameId => {
+            const gameString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`);
+            return gameString ? JSON.parse(gameString) as GameState : null;
+          }).filter(game => game !== null) as GameState[];
+          setLinkedGames(gamesData);
+
         } catch (e) {
           console.error("Failed to parse tournament data for ID:", tournamentId, e);
-          setTournament(null); // Explicitly set to null on error
+          setTournament(null); 
+          setLinkedGames([]);
         }
       } else {
-        // Tournament with this ID not found in local storage
         setTournament(null);
+        setLinkedGames([]);
       }
     } else {
-      // No tournamentId provided (should not happen with Next.js routing for [id] pages)
       setTournament(null);
+      setLinkedGames([]);
     }
-    setIsLoading(false); // Set loading false after processing
+    setIsLoading(false); 
   }, [tournamentId]);
 
 
@@ -111,17 +120,15 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
 
     return playersWithCalculatedScores.sort((a, b) => {
       if (a.finalTournamentScore === undefined && b.finalTournamentScore === undefined) return 0;
-      if (a.finalTournamentScore === undefined) return 1; // Undefined scores (0 games) go last
+      if (a.finalTournamentScore === undefined) return 1; 
       if (b.finalTournamentScore === undefined) return -1;
 
       if (a.finalTournamentScore !== b.finalTournamentScore) {
         return a.finalTournamentScore - b.finalTournamentScore;
       }
-      // Tie-breaker 1: Fewer busts
       if (a.busts !== b.busts) {
         return a.busts - b.busts;
       }
-      // Tie-breaker 2: More wins
       return b.wins - a.wins;
     });
   }, [tournament]);
@@ -132,32 +139,6 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
     if (mode === 'rotate_on_bust') return 'Rotate Busted Players (Gameplay TBD)';
     return 'N/A';
   }
-
-  // Placeholder function for updating stats - to be implemented with game linking
-  const handleAddGameResult = (playerId: string, position: number, tableSize: number, busted: boolean, perfectGame: boolean) => {
-    if (!tournament) return;
-
-    const updatedPlayers = tournament.players.map(p => {
-      if (p.id === playerId) {
-        const newP: TournamentPlayerStats = {
-          ...p,
-          gamesPlayed: p.gamesPlayed + 1,
-          sumWeightedPlaces: p.sumWeightedPlaces + (position / tableSize),
-          wins: position === 1 ? p.wins + 1 : p.wins,
-          busts: busted ? p.busts + 1 : p.busts,
-          perfectGames: perfectGame ? p.perfectGames + 1 : p.perfectGames,
-        };
-        return newP;
-      }
-      return p;
-    });
-
-    const updatedTournament = { ...tournament, players: updatedPlayers };
-    setTournament(updatedTournament);
-    localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournament.id}`, JSON.stringify(updatedTournament));
-    // In a real scenario, you'd probably re-fetch or re-calculate scores here
-  };
-
 
   return (
     <div className="max-w-6xl mx-auto py-8">
@@ -192,6 +173,15 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
             <p className="text-xl text-destructive">Tournament not found or data is corrupted.</p>
           ) : (
             <>
+              <div className="mb-6">
+                <Link href={`/new-game?tournamentId=${tournament.id}`} passHref>
+                  <Button variant="default" size="lg" className="w-full md:w-auto" disabled={!tournament.isActive}>
+                    <PlusCircle className="mr-2 h-5 w-5" /> Start New Tournament Game
+                  </Button>
+                </Link>
+                 {!tournament.isActive && <p className="text-sm text-muted-foreground mt-2">This tournament is marked as inactive. No new games can be started.</p>}
+              </div>
+            
               <div className="mb-6 p-4 bg-secondary/30 rounded-md">
                 <h3 className="text-xl font-semibold text-primary flex items-center gap-2 mb-3"><BarChart3 /> Leaderboard</h3>
                 {sortedPlayersWithScores.length > 0 ? (
@@ -236,26 +226,45 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                   <p className="text-muted-foreground text-center py-4">No players in this tournament yet or no games played.</p>
                 )}
               </div>
+
+              <Card className="mt-6 border-dashed border-primary/50">
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2"><List className="text-primary"/> Linked Games ({linkedGames.length})</CardTitle>
+                    <CardDescription>Games played as part of this tournament.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {linkedGames.length > 0 ? (
+                        <ul className="space-y-2">
+                            {linkedGames.map(game => (
+                                <li key={game.id} className="text-sm p-2 border rounded-md bg-background hover:bg-muted/50 transition-colors">
+                                    <Link href={`/game/${game.id}`} className="flex justify-between items-center">
+                                        <span>
+                                            Game {game.gameNumberInTournament || '#'}: ID {game.id.substring(0,10)}... 
+                                            (Players: {game.players.map(p=>p.name).join(', ')})
+                                        </span>
+                                        <Gamepad2 className="h-4 w-4 text-muted-foreground"/>
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-sm text-muted-foreground text-center py-3">No games have been linked to this tournament yet. Click "Start New Tournament Game" above.</p>
+                    )}
+                </CardContent>
+              </Card>
               
               <Card className="mt-6 border-dashed border-primary/50">
                 <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2"><Info className="text-primary"/>How to Add Game Results</CardTitle>
+                    <CardTitle className="text-lg flex items-center gap-2"><Info className="text-primary"/>How to Update Player Stats</CardTitle>
                 </CardHeader>
                 <CardContent>
                     <p className="text-sm text-muted-foreground">
-                        Currently, game results need to be manually reflected in player stats for this leaderboard to update.
-                        The UI for linking completed games to this tournament and automatically updating player statistics (wins, busts, position, etc.) is planned for a future update.
+                        After completing a game linked to this tournament, the game's results (winner, busts, scores) need to be processed to update the player statistics on this leaderboard.
+                        The UI for automatically updating these stats after a linked game finishes is planned for a future update.
                     </p>
                     <p className="text-xs text-muted-foreground mt-2">
-                        (Developer Note: To test, you can temporarily modify local storage for the tournament to update player stats like `gamesPlayed`, `wins`, `busts`, `perfectGames`, and `sumWeightedPlaces`.)
+                        (Developer Note: The current implementation does not yet automatically update tournament player stats after a game is completed. This functionality needs to be built, likely triggered from the `Scoreboard.tsx` component when a game with a `tournamentId` becomes inactive.)
                     </p>
-                     {/* Example buttons for manual stat updates - FOR TESTING ONLY */}
-                    {/* {tournament.players.length > 0 && (
-                        <div className="mt-4 space-x-2">
-                             <Button size="sm" variant="outline" onClick={() => handleAddGameResult(tournament.players[0].id, 1, 4, false, false )}>Simulate P1 Win (1/4)</Button>
-                             <Button size="sm" variant="outline" onClick={() => handleAddGameResult(tournament.players[0].id, 4, 4, true, false )}>Simulate P1 Bust (4/4)</Button>
-                        </div>
-                    )} */}
                 </CardContent>
               </Card>
             </>

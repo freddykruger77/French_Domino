@@ -40,6 +40,8 @@ export interface GameState {
     roundNumber: number;
     playerScores: number[];
   }[];
+  tournamentId?: string; // ID of the tournament this game belongs to
+  gameNumberInTournament?: number; // Sequence number of this game within the tournament
 }
 
 export interface TournamentPlayerStats extends Player {
