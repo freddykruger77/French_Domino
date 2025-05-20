@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trophy, Users, Cog, BarChart3, Info, AlertTriangle, PlusCircle, Gamepad2, List } from "lucide-react";
+import { ArrowLeft, Trophy, Cog, BarChart3, Info, PlusCircle, Gamepad2, List } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo, use } from "react";
 import type { Tournament, TournamentPlayerStats, GameState } from '@/lib/types';
@@ -61,7 +61,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
   const [linkedGames, setLinkedGames] = useState<GameState[]>([]);
 
   useEffect(() => {
-    setIsLoading(true); 
+    setIsLoading(true);
     if (tournamentId) {
       const tournamentString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournamentId}`);
       if (tournamentString) {
@@ -69,7 +69,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
           const parsedTournament = JSON.parse(tournamentString) as Partial<Tournament>;
           const completeTournament: Tournament = {
             id: parsedTournament.id || tournamentId,
-            name: parsedTournament.name ?? 'Unnamed Tournament',
+            name: (parsedTournament.name && parsedTournament.name.trim()) || 'Unnamed Tournament',
             players: parsedTournament.players ?? [],
             targetScore: parsedTournament.targetScore ?? DEFAULT_TARGET_SCORE,
             playerParticipationMode: parsedTournament.playerParticipationMode ?? 'fixed_roster',
@@ -91,7 +91,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
 
         } catch (e) {
           console.error("Failed to parse tournament data for ID:", tournamentId, e);
-          setTournament(null); 
+          setTournament(null);
           setLinkedGames([]);
         }
       } else {
@@ -102,7 +102,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
       setTournament(null);
       setLinkedGames([]);
     }
-    setIsLoading(false); 
+    setIsLoading(false);
   }, [tournamentId]);
 
 
@@ -120,7 +120,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
 
     return playersWithCalculatedScores.sort((a, b) => {
       if (a.finalTournamentScore === undefined && b.finalTournamentScore === undefined) return 0;
-      if (a.finalTournamentScore === undefined) return 1; 
+      if (a.finalTournamentScore === undefined) return 1;
       if (b.finalTournamentScore === undefined) return -1;
 
       if (a.finalTournamentScore !== b.finalTournamentScore) {
@@ -151,7 +151,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-primary flex items-center gap-2">
             <Trophy />
-            Tournament: {isLoading ? "Loading..." : tournament ? tournament.name : "Not Found"}
+            Tournament: {isLoading ? "Loading..." : tournament ? (tournament.name || "Unnamed Tournament") : "Not Found"}
           </CardTitle>
           {tournament && !isLoading && (
             <CardDescription className="space-y-1">
@@ -181,7 +181,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                 </Link>
                  {!tournament.isActive && <p className="text-sm text-muted-foreground mt-2">This tournament is marked as inactive. No new games can be started.</p>}
               </div>
-            
+
               <div className="mb-6 p-4 bg-secondary/30 rounded-md">
                 <h3 className="text-xl font-semibold text-primary flex items-center gap-2 mb-3"><BarChart3 /> Leaderboard</h3>
                 {sortedPlayersWithScores.length > 0 ? (
@@ -239,7 +239,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                                 <li key={game.id} className="text-sm p-2 border rounded-md bg-background hover:bg-muted/50 transition-colors">
                                     <Link href={`/game/${game.id}`} className="flex justify-between items-center">
                                         <span>
-                                            Game {game.gameNumberInTournament || '#'}: ID {game.id.substring(0,10)}... 
+                                            Game {game.gameNumberInTournament || '#'}: ID {game.id.substring(0,10)}...
                                             (Players: {game.players.map(p=>p.name).join(', ')})
                                         </span>
                                         <Gamepad2 className="h-4 w-4 text-muted-foreground"/>
@@ -252,7 +252,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                     )}
                 </CardContent>
               </Card>
-              
+
               <Card className="mt-6 border-dashed border-primary/50">
                 <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2"><Info className="text-primary"/>How to Update Player Stats</CardTitle>
@@ -279,4 +279,3 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
     </div>
   );
 }
-
