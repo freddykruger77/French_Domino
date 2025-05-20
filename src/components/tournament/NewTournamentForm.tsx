@@ -8,14 +8,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, LOCAL_STORAGE_KEYS } from '@/lib/constants';
+import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, LOCAL_STORAGE_KEYS, DEFAULT_WIN_BONUS_K, DEFAULT_BUST_PENALTY_K, DEFAULT_PG_KICKER_K } from '@/lib/constants';
 import type { Tournament, TournamentPlayerStats, CachedPlayer, Player, PlayerParticipationMode } from '@/lib/types';
 import useLocalStorage from '@/hooks/useLocalStorage';
-import { PlusCircle, UserPlus } from 'lucide-react';
+import { PlusCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const MAX_CACHED_PLAYERS = 10; // Remains for caching logic, not a limit on tournament players.
-const INITIAL_DEFAULT_PLAYERS = 4; // Default for the form input
+const MAX_CACHED_PLAYERS = 10; 
+const INITIAL_DEFAULT_PLAYERS = 4; 
 
 export default function NewTournamentForm() {
   const router = useRouter();
@@ -36,7 +36,7 @@ export default function NewTournamentForm() {
   }, []);
 
   useEffect(() => {
-    // Pre-fill names from cache if available, accommodating current numPlayers
+    if (!isClient) return;
     const initialNames = Array(numPlayers).fill('');
     cachedPlayers
       .sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime())
@@ -47,20 +47,19 @@ export default function NewTournamentForm() {
         }
       });
     
-    // Ensure playerNames array matches numPlayers, preserving existing names
     setPlayerNames(currentNames => {
         const newNames = Array(numPlayers).fill('');
         for (let i = 0; i < numPlayers; i++) {
             if (initialNames[i]) {
                 newNames[i] = initialNames[i];
-            } else if (currentNames[i]) {
+            } else if (i < currentNames.length && currentNames[i]) {
                  newNames[i] = currentNames[i];
             }
         }
         return newNames;
     });
 
-  }, [cachedPlayers, numPlayers]);
+  }, [cachedPlayers, numPlayers, isClient]);
 
 
   const handleNumPlayersChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,7 +69,6 @@ export default function NewTournamentForm() {
     }
     setNumPlayers(newCount);
 
-    // Adjust playerNames array size
     setPlayerNames(currentNames => {
       const newPlayerNamesArray = Array(newCount).fill('');
       for (let i = 0; i < newCount; i++) {
@@ -106,21 +104,19 @@ export default function NewTournamentForm() {
       return;
     }
 
-
     const currentTournamentPlayers: Player[] = actualPlayerNames.map((name, index) => ({
       id: `player-tourney-${Date.now()}-${index}`,
       name: name.trim(),
     }));
 
-
     const tournamentPlayerStats: TournamentPlayerStats[] = currentTournamentPlayers.map(player => ({
       ...player,
-      tournamentGamesWon: 0,
-      tournamentTimesBusted: 0,
-      averageRank: 0,
-      totalPoints: 0,
-      roundsIn90sWithoutBusting: 0, // Placeholder, logic TBD
       gamesPlayed: 0,
+      wins: 0,
+      busts: 0,
+      perfectGames: 0,
+      sumWeightedPlaces: 0,
+      // calculated scores will be computed on display
     }));
     
     const newTournamentId = `tournament-${Date.now()}`;
@@ -133,6 +129,9 @@ export default function NewTournamentForm() {
       gameIds: [],
       isActive: true,
       createdAt: new Date().toISOString(),
+      winBonusK: DEFAULT_WIN_BONUS_K,
+      bustPenaltyK: DEFAULT_BUST_PENALTY_K,
+      pgKickerK: DEFAULT_PG_KICKER_K,
     };
 
     localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${newTournamentId}`, JSON.stringify(newTournament));

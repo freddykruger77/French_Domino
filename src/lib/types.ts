@@ -43,12 +43,19 @@ export interface GameState {
 }
 
 export interface TournamentPlayerStats extends Player {
-  tournamentGamesWon: number;
-  tournamentTimesBusted: number;
-  averageRank: number; // Lower is better
-  totalPoints: number; // Cumulative points across all games in tournament
-  roundsIn90sWithoutBusting: number; // Placeholder, logic TBD
-  gamesPlayed: number;
+  // Raw stats from games
+  gamesPlayed: number; // G
+  wins: number; // W
+  busts: number; // B
+  perfectGames: number; // PG
+  sumWeightedPlaces: number; // Σ(Pᵢ / Tᵢ)
+
+  // Calculated scores for leaderboard display
+  calculatedBaseScore?: number;
+  calculatedWinBonus?: number;
+  calculatedBustPenalty?: number;
+  calculatedPgBonus?: number;
+  finalTournamentScore?: number;
 }
 
 export type PlayerParticipationMode = 'fixed_roster' | 'rotate_on_bust';
@@ -56,17 +63,17 @@ export type PlayerParticipationMode = 'fixed_roster' | 'rotate_on_bust';
 export interface Tournament {
   id: string;
   name: string;
-  gameIds: string[];
+  gameIds: string[]; // IDs of GameState objects linked to this tournament
   players: TournamentPlayerStats[];
   targetScore: number; // Target score for games within this tournament
   playerParticipationMode: PlayerParticipationMode;
   createdAt: string;
   isActive: boolean; // Can be manually set to false to "archive" or complete a tournament
-  winnerId?: string; // Overall tournament winner (Player ID)
-  // Future: Could add tournament specific rules here, e.g.
-  // numberOfGamesToPlay?: number;
-  // pointsForWin?: number;
-  // pointsForSecond?: number; etc.
+  // Configurable K-factors for scoring
+  winBonusK: number;
+  bustPenaltyK: number;
+  pgKickerK: number;
+  // overallTournamentWinnerId?: string; // Future: Store overall winner
 }
 
 export interface CachedPlayer extends Player {
