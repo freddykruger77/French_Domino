@@ -122,7 +122,7 @@ export default function TournamentsPage() {
               {tournaments.map(tournament => (
                 <Card key={tournament.id} className="bg-secondary/30">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-xl text-primary-foreground">{tournament.name}</CardTitle>
+                    <CardTitle className="text-xl text-primary">{tournament.name || "Unnamed Tournament"}</CardTitle>
                     <CardDescription className="text-xs space-y-0.5">
                       <p>Created: {new Date(tournament.createdAt).toLocaleDateString()}</p>
                       <p>Target Score: {tournament.targetScore} | {tournament.players.length} Players</p>
@@ -171,3 +171,4 @@ export default function TournamentsPage() {
     </div>
   );
 }
+
