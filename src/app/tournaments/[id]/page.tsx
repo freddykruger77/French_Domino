@@ -7,7 +7,7 @@ import { ArrowLeft, Trophy, Users, Cog, BarChart3, Info, AlertTriangle } from "l
 import Link from "next/link";
 import { useEffect, useState, useMemo, use } from "react";
 import type { Tournament, TournamentPlayerStats } from '@/lib/types';
-import { LOCAL_STORAGE_KEYS } from '@/lib/constants';
+import { LOCAL_STORAGE_KEYS, DEFAULT_TARGET_SCORE, DEFAULT_WIN_BONUS_K, DEFAULT_BUST_PENALTY_K, DEFAULT_PG_KICKER_K } from '@/lib/constants';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -60,18 +60,42 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    setIsLoading(true); // Set loading true at the start
     if (tournamentId) {
       const tournamentString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournamentId}`);
       if (tournamentString) {
         try {
-          setTournament(JSON.parse(tournamentString));
+          const parsedTournament = JSON.parse(tournamentString) as Partial<Tournament>;
+          // Ensure all potentially missing fields from older data have defaults
+          const completeTournament: Tournament = {
+            id: parsedTournament.id || tournamentId,
+            name: parsedTournament.name ?? 'Unnamed Tournament',
+            players: parsedTournament.players ?? [],
+            targetScore: parsedTournament.targetScore ?? DEFAULT_TARGET_SCORE,
+            playerParticipationMode: parsedTournament.playerParticipationMode ?? 'fixed_roster',
+            gameIds: parsedTournament.gameIds ?? [],
+            isActive: parsedTournament.isActive ?? true,
+            createdAt: parsedTournament.createdAt ?? new Date().toISOString(),
+            winBonusK: parsedTournament.winBonusK ?? DEFAULT_WIN_BONUS_K,
+            bustPenaltyK: parsedTournament.bustPenaltyK ?? DEFAULT_BUST_PENALTY_K,
+            pgKickerK: parsedTournament.pgKickerK ?? DEFAULT_PG_KICKER_K,
+          };
+          setTournament(completeTournament);
         } catch (e) {
-          console.error("Failed to parse tournament data", e);
+          console.error("Failed to parse tournament data for ID:", tournamentId, e);
+          setTournament(null); // Explicitly set to null on error
         }
+      } else {
+        // Tournament with this ID not found in local storage
+        setTournament(null);
       }
+    } else {
+      // No tournamentId provided (should not happen with Next.js routing for [id] pages)
+      setTournament(null);
     }
-    setIsLoading(false);
+    setIsLoading(false); // Set loading false after processing
   }, [tournamentId]);
+
 
   const sortedPlayersWithScores = useMemo(() => {
     if (!tournament) return [];
@@ -154,7 +178,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
               <p>Game Target Score: {tournament.targetScore}</p>
               <p className="flex items-center gap-1"><Cog className="h-4 w-4 text-muted-foreground"/> Participation: {participationModeText(tournament.playerParticipationMode)}</p>
                <p className="text-xs text-muted-foreground">
-                Scoring: Base (Avg. Weighted Place) + Win Bonus (-{tournament.winBonusK.toFixed(2)}) + Bust Penalty (+{tournament.bustPenaltyK.toFixed(2)}) + PG Bonus (-{tournament.pgKickerK.toFixed(2)})
+                Scoring: Base (Avg. Weighted Place) + Win Bonus (-{(tournament.winBonusK).toFixed(2)}) + Bust Penalty (+{(tournament.bustPenaltyK).toFixed(2)}) + PG Bonus (-{(tournament.pgKickerK).toFixed(2)})
               </p>
             </CardDescription>
           )}
