@@ -25,6 +25,11 @@ export default function NewGameForm() {
   
   const [cachedPlayers, setCachedPlayers] = useLocalStorage<CachedPlayer[]>(LOCAL_STORAGE_KEYS.CACHED_PLAYERS, []);
   const [activeGames, setActiveGames] = useLocalStorage<string[]>(LOCAL_STORAGE_KEYS.ACTIVE_GAMES_LIST, []);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     // Pre-fill names from cache if available
@@ -139,7 +144,7 @@ export default function NewGameForm() {
                 required
                 className="flex-grow"
               />
-              {cachedPlayers.length > 0 && (
+              {isClient && cachedPlayers.length > 0 && (
                 <Select onValueChange={(cachedName) => handleAddPlayerFromCache(index, cachedName)}>
                   <SelectTrigger className="w-[150px] text-xs">
                     <SelectValue placeholder="Quick Add" />

@@ -29,6 +29,11 @@ export default function NewTournamentForm() {
   
   const [cachedPlayers, setCachedPlayers] = useLocalStorage<CachedPlayer[]>(LOCAL_STORAGE_KEYS.CACHED_PLAYERS, []);
   const [activeTournaments, setActiveTournaments] = useLocalStorage<string[]>(LOCAL_STORAGE_KEYS.ACTIVE_TOURNAMENTS_LIST, []);
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     // Pre-fill names from cache if available, accommodating current numPlayers
@@ -195,7 +200,7 @@ export default function NewTournamentForm() {
                 required
                 className="flex-grow"
               />
-              {cachedPlayers.length > 0 && (
+              {isClient && cachedPlayers.length > 0 && (
                 <Select onValueChange={(cachedName) => handleAddPlayerFromCache(index, cachedName)}>
                   <SelectTrigger className="w-[150px] text-xs">
                     <SelectValue placeholder="Quick Add" />
@@ -253,4 +258,3 @@ export default function NewTournamentForm() {
     </form>
   );
 }
-
