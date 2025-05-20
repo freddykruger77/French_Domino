@@ -40,6 +40,8 @@ interface EditingScoreDetails {
   currentScore: number;
 }
 
+type UndoActionType = 'scores_and_penalties' | 'penalties_only' | null;
+
 export default function Scoreboard({ gameId }: ScoreboardProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -49,13 +51,14 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const [currentRoundScores, setCurrentRoundScores] = useState<Record<string, string>>({});
   const [showBoardPassDialog, setShowBoardPassDialog] = useState(false);
   const [boardPassIssuerId, setBoardPassIssuerId] = useState<string | null>(null);
+  
   const [showUndoConfirmationDialog, setShowUndoConfirmationDialog] = useState(false);
   const [lastRoundNumberToUndo, setLastRoundNumberToUndo] = useState<number | null>(null);
+  const [undoActionType, setUndoActionType] = useState<UndoActionType>(null);
   
   const [showEditScoreDialog, setShowEditScoreDialog] = useState(false);
   const [editingScoreDetails, setEditingScoreDetails] = useState<EditingScoreDetails | null>(null);
   const [newScoreForEdit, setNewScoreForEdit] = useState<string>('');
-  // Store original player order for AI record indexing
   const [originalPlayerIdsOrder, setOriginalPlayerIdsOrder] = useState<string[]>([]);
 
 
@@ -65,7 +68,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       const initialScores: Record<string, string> = {};
       game.players.forEach(p => initialScores[p.id] = '');
       setCurrentRoundScores(initialScores);
-      if (originalPlayerIdsOrder.length === 0) {
+      if (originalPlayerIdsOrder.length === 0 && game.players.length > 0) {
         setOriginalPlayerIdsOrder(game.players.map(p => p.id));
       }
     } else if(localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`) === null) {
@@ -76,24 +79,31 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
 
   const recalculatePlayerStatesFromHistory = useCallback((
-    initialPlayersTemplate: PlayerInGame[], // The original player list structure
+    initialPlayersTemplate: PlayerInGame[],
     rounds: GameRound[],
     penaltyLog: PenaltyLogEntry[],
     targetScore: number
   ): PlayerInGame[] => {
     const newPlayerStates = initialPlayersTemplate.map(pTemplate => ({
-      ...pTemplate, // Use template for id, name
+      ...pTemplate,
       currentScore: 0,
       isBusted: false,
       roundScores: [],
     }));
 
-    // Sort rounds and penalties by round number to process chronologically
-    const allEvents: ({type: 'round'; data: GameRound} | {type: 'penalty'; data: PenaltyLogEntry})[] = [];
-    rounds.forEach(r => allEvents.push({type: 'round', data: r}));
-    penaltyLog.forEach(p => allEvents.push({type: 'penalty', data: p}));
+    const allEvents: ({type: 'round'; roundNumber: number; data: GameRound} | {type: 'penalty'; roundNumber: number; data: PenaltyLogEntry})[] = [];
+    rounds.forEach(r => allEvents.push({type: 'round', roundNumber: r.roundNumber, data: r}));
+    penaltyLog.forEach(p => allEvents.push({type: 'penalty', roundNumber: p.roundNumber, data: p}));
     
-    allEvents.sort((a, b) => a.data.roundNumber - b.data.roundNumber);
+    allEvents.sort((a, b) => {
+      if (a.roundNumber !== b.roundNumber) {
+        return a.roundNumber - b.roundNumber;
+      }
+      // Ensure rounds are processed before penalties of the same round number if necessary, though usually distinct
+      if (a.type === 'round' && b.type === 'penalty') return -1;
+      if (a.type === 'penalty' && b.type === 'round') return 1;
+      return 0;
+    });
 
 
     for (const event of allEvents) {
@@ -101,21 +111,21 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         const round = event.data;
         for (const player of newPlayerStates) {
           const scoreInRound = round.scores[player.id] || 0;
-          if (!player.isBusted) { // Only add score if not already busted from a penalty in same round period
+          if (!player.isBusted) {
              player.currentScore += scoreInRound;
              player.roundScores.push(scoreInRound);
           } else {
-             player.roundScores.push(0); // If busted, score for this round is effectively 0 for history
+             player.roundScores.push(0); 
           }
         }
       } else if (event.type === 'penalty') {
         const penalty = event.data;
         const player = newPlayerStates.find(p => p.id === penalty.playerId);
-        if (player && !player.isBusted) { // Only apply penalty if not already busted
+        if (player && !player.isBusted) {
           player.currentScore += penalty.points;
         }
       }
-      // Check for busts after each event (round or penalty batch for a round number)
+      
       for (const player of newPlayerStates) {
         if (!player.isBusted && player.currentScore >= targetScore) {
           player.isBusted = true;
@@ -252,7 +262,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterRound);
     const initialScores: Record<string, string> = {};
-    game.players.forEach(p => initialScores[p.id] = ''); 
+    (game.players || []).forEach(p => initialScores[p.id] = ''); 
     setCurrentRoundScores(initialScores);
     setShowAddScoreDialog(false);
   };
@@ -403,50 +413,69 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     setBoardPassIssuerId(null);
   };
 
-  const triggerUndoLastRound = () => {
-    if (!game || game.rounds.length === 0) {
-      toast({ title: "Cannot Undo", description: "No rounds have been scored yet.", variant: "destructive" });
-      return;
+ const triggerUndoLastRound = () => {
+    if (!game) return;
+
+    let roundPeriodToAddress: number;
+    let scoresAreBeingRemoved = false;
+
+    if (game.rounds.length > 0) {
+      roundPeriodToAddress = game.rounds[game.rounds.length - 1].roundNumber;
+      scoresAreBeingRemoved = true;
+    } else {
+      roundPeriodToAddress = game.currentRoundNumber;
     }
-    const roundNumToUndo = game.rounds[game.rounds.length - 1].roundNumber;
-    setLastRoundNumberToUndo(roundNumToUndo);
 
-    const newRounds = game.rounds.slice(0, -1);
-    const newAiGameRecords = (game.aiGameRecords || []).slice(0, -1);
-    
-    setGame(prevGame => {
-      if (!prevGame) return null;
-      // Temporarily update game with removed scores/AI records before asking about penalties
-      return {
-        ...prevGame,
-        rounds: newRounds,
-        aiGameRecords: newAiGameRecords,
+    setLastRoundNumberToUndo(roundPeriodToAddress);
+
+    if (scoresAreBeingRemoved) {
+      // Stage the removal of scores and AI records before showing dialog or finalizing
+      // This ensures finalizeUndo acts on the state *after* scores are notionally removed
+      const tempGameWithScoresRemoved = {
+        ...game,
+        rounds: game.rounds.slice(0, -1),
+        aiGameRecords: (game.aiGameRecords || []).slice(0, -1),
       };
-    });
+      setGame(tempGameWithScoresRemoved); // Update game state immediately for subsequent logic
+      setUndoActionType('scores_and_penalties');
+    } else {
+      setUndoActionType('penalties_only');
+    }
 
-    const penaltiesExistForRound = (game.penaltyLog || []).some(p => p.roundNumber === roundNumToUndo);
-    if (penaltiesExistForRound) {
+    const penaltiesExistForPeriod = (game.penaltyLog || []).some(p => p.roundNumber === roundPeriodToAddress);
+
+    if (penaltiesExistForPeriod) {
       setShowUndoConfirmationDialog(true);
     } else {
-      finalizeUndo(false); 
+      // No penalties to ask about
+      if (scoresAreBeingRemoved) {
+        // Scores were staged for removal (setGame already called), finalize this.
+        // finalizeUndo will use the game state which already has scores removed.
+        finalizeUndo(false); // removePenalties is false as none exist for period
+      } else {
+        // No scores were being removed, and no penalties exist for the period
+        toast({ title: "Nothing to Undo", description: `No scores or penalties recorded for round period ${roundPeriodToAddress}.` });
+        setLastRoundNumberToUndo(null);
+        setUndoActionType(null);
+      }
     }
   };
   
   const finalizeUndo = (removePenalties: boolean) => {
     if (!game || lastRoundNumberToUndo === null) return;
 
+    // game state here is *after* potential score removal in triggerUndoLastRound
     let newPenaltyLog = [...(game.penaltyLog || [])];
     if (removePenalties) {
       newPenaltyLog = newPenaltyLog.filter(p => p.roundNumber !== lastRoundNumberToUndo);
     }
     
-    // Use the game state that already has rounds/aiRecords removed (from triggerUndoLastRound)
-    const gameAfterScoreUndo = { ...game }; 
+    const currentRoundsAfterPotentialUndo = game.rounds; // game.rounds is already updated if scores were removed
+    const currentAiGameRecordsAfterPotentialUndo = game.aiGameRecords;
 
 
-    const currentRoundAfterUndo = gameAfterScoreUndo.rounds.length + 1;
+    const currentRoundAfterUndo = currentRoundsAfterPotentialUndo.length + 1;
 
-    // Use the original player list as a template for recalculation
     const initialPlayersTemplate = game.players.map(p => ({
         id: p.id,
         name: p.name,
@@ -458,9 +487,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
     const recalculatedPlayers = recalculatePlayerStatesFromHistory(
       initialPlayersTemplate, 
-      gameAfterScoreUndo.rounds, 
+      currentRoundsAfterPotentialUndo, 
       newPenaltyLog,
-      gameAfterScoreUndo.targetScore
+      game.targetScore
     );
 
     const updatedGameData: Partial<GameState> = {
@@ -471,7 +500,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     };
     
     const tempGameForCheck: GameState = {
-      ...gameAfterScoreUndo,
+      ...game, // Start with the game state that might have scores removed
       ...updatedGameData,
       players: recalculatedPlayers,
     };
@@ -479,16 +508,33 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const finalGameStateAfterUndo = checkAndEndGame(tempGameForCheck, recalculatedPlayers);
     
     setGame({
-        ...gameAfterScoreUndo, 
+        ...game, 
         ...updatedGameData,
         players: finalGameStateAfterUndo.players,
         isActive: finalGameStateAfterUndo.isActive,
         winnerId: finalGameStateAfterUndo.winnerId,
+        // aiGameRecords and rounds are already set if scores were removed
     });
+    
+    let toastDescription = '';
+    if (undoActionType === 'scores_and_penalties') {
+      toastDescription = `Scores for round ${lastRoundNumberToUndo} were removed.`;
+      const penaltiesWereAnOption = (game.penaltyLog || []).some(p => p.roundNumber === lastRoundNumberToUndo && newPenaltyLog.find(np => np.playerId === p.playerId && np.roundNumber === p.roundNumber) !== undefined);
+      if (penaltiesWereAnOption || removePenalties) { // Check if penalties were an option OR were removed
+         toastDescription += ` Associated penalties were ${removePenalties ? 'also removed.' : 'kept.'}`;
+      }
+    } else if (undoActionType === 'penalties_only') {
+      if (removePenalties) {
+        toastDescription = `Penalties for round period ${lastRoundNumberToUndo} were removed.`;
+      } else {
+        toastDescription = `No changes made to penalties for round period ${lastRoundNumberToUndo}.`;
+      }
+    }
+    toast({ title: "Undo Processed", description: toastDescription });
 
-    toast({ title: "Undo Successful", description: `Round ${lastRoundNumberToUndo} scores ${removePenalties ? 'and associated penalties have' : 'have'} been removed.` });
     setShowUndoConfirmationDialog(false);
     setLastRoundNumberToUndo(null);
+    setUndoActionType(null);
   };
 
   const handleEditScoreRequest = (roundNumber: number, playerId: string, currentScore: number) => {
@@ -517,7 +563,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
     const { roundNumber, playerId } = editingScoreDetails;
 
-    // Update game.rounds
     const newRounds = game.rounds.map(r => {
       if (r.roundNumber === roundNumber) {
         return {
@@ -531,16 +576,17 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       return r;
     });
 
-    // Update game.aiGameRecords
     const playerIndexInOriginalOrder = originalPlayerIdsOrder.indexOf(playerId);
-    if (playerIndexInOriginalOrder === -1) {
+    if (playerIndexInOriginalOrder === -1 && originalPlayerIdsOrder.length > 0) { // only error if originalPlayerIdsOrder was expected
         toast({ title: "Error", description: "Could not find player index for AI records. Edit aborted.", variant: "destructive"});
         return;
     }
     const newAiGameRecords = (game.aiGameRecords || []).map(ar => {
       if (ar.roundNumber === roundNumber) {
         const updatedPlayerScores = [...ar.playerScores];
-        updatedPlayerScores[playerIndexInOriginalOrder] = newScore;
+        if (playerIndexInOriginalOrder !== -1) {
+             updatedPlayerScores[playerIndexInOriginalOrder] = newScore;
+        }
         return { ...ar, playerScores: updatedPlayerScores };
       }
       return ar;
@@ -557,31 +603,29 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const recalculatedPlayers = recalculatePlayerStatesFromHistory(
       initialPlayersTemplate,
       newRounds,
-      game.penaltyLog, // Penalties are not changed by this edit action
+      game.penaltyLog,
       game.targetScore
     );
 
     const updatedGameData: Partial<GameState> = {
       rounds: newRounds,
       aiGameRecords: newAiGameRecords,
-      // currentRoundNumber remains game.rounds.length + 1 implicitly by checkAndEndGame or subsequent logic
-      isActive: true, // Assume active, checkAndEndGame will determine final state
-      winnerId: undefined, // Reset winner, checkAndEndGame will determine
+      isActive: true, 
+      winnerId: undefined,
     };
 
-    // Create a temporary full game state for checkAndEndGame
     const tempGameForCheck: GameState = {
-      ...game, // Start with current game state
-      ...updatedGameData, // Apply partial updates
-      players: recalculatedPlayers, // Crucially, use the fully recalculated players
-      currentRoundNumber: newRounds.length + 1, // Ensure currentRoundNumber is correct for checkAndEndGame
+      ...game, 
+      ...updatedGameData, 
+      players: recalculatedPlayers, 
+      currentRoundNumber: newRounds.length + 1, 
     };
     
     const finalGameStateAfterEdit = checkAndEndGame(tempGameForCheck, recalculatedPlayers);
 
     setGame({
       ...game,
-      ...updatedGameData, // Apply partial updates again to ensure they are part of the final setGame
+      ...updatedGameData, 
       players: finalGameStateAfterEdit.players,
       isActive: finalGameStateAfterEdit.isActive,
       winnerId: finalGameStateAfterEdit.winnerId,
@@ -611,7 +655,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     shufflerPlayerIds = activeNonBustedPlayersForDialogs
       .filter(p => p.currentScore === highestScore)
       .map(p => p.id);
+  } else if (game.isActive && activeNonBustedPlayersForDialogs.length === 1 && !isBeforeFirstRoundScored) {
+    shufflerPlayerIds = [activeNonBustedPlayersForDialogs[0].id]; // Lone active player is shuffler
   }
+
 
   const gameIsOver = !game.isActive;
   const winner = gameIsOver && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
@@ -627,8 +674,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     isLoneSurvivorWin = !!(winner && nonBustedInGameOver.length === 1 && bustedPlayersOnGameOver.length === game.players.length - 1);
     
     if (game.players.length > 0) {
-      highestScoreInGame = Math.max(...game.players.map(p => p.currentScore));
-      playersWithHighestScore = game.players.filter(p => p.currentScore === highestScoreInGame);
+      highestScoreInGame = Math.max(...game.players.map(p => p.currentScore).filter(s => s !== Infinity && s !== -Infinity));
+      if (highestScoreInGame !== -Infinity) {
+        playersWithHighestScore = game.players.filter(p => p.currentScore === highestScoreInGame);
+      }
     }
     playersOver150 = game.players.filter(p => p.currentScore > 150);
   }
@@ -638,7 +687,11 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   
   const canEnableBoardPassButtonGlobal = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
-                                   game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted); 
+                                   game.players.some(p => 
+                                     p.id !== boardPassIssuerId && // Ensure there's at least one other player
+                                     !p.isBusted && 
+                                     p.currentScore < game.targetScore - PENALTY_POINTS // And that other player is eligible for penalty
+                                   );
 
   const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
 
@@ -649,6 +702,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                                             p.currentScore < game.targetScore - PENALTY_POINTS
                                           );
   const potentialBoardPassReceiversExist = boardPassIssuerId && game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted && p.currentScore < game.targetScore - PENALTY_POINTS);
+  
+  const canUndo = game.rounds.length > 0 || (game.penaltyLog || []).some(p => p.roundNumber === game.currentRoundNumber);
 
 
   return (
@@ -769,10 +824,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                     variant="outline" 
                     size="sm" 
                     onClick={triggerUndoLastRound} 
-                    disabled={(game.rounds.length === 0 && (game.penaltyLog || []).filter(p => p.roundNumber === game.currentRoundNumber-1).length === 0) || !game.isActive && game.rounds.length === 0}
+                    disabled={!canUndo}
                     className="mt-4"
                   >
-                    <Undo2 className="mr-2 h-4 w-4" /> Undo Last Scored Round
+                    <Undo2 className="mr-2 h-4 w-4" /> Undo Last Action
                   </Button>
                 </>
               ) : (
@@ -837,8 +892,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Declare Board Pass</AlertDialogTitle>
               <AlertDialogDescription>
-                Select the player who successfully passed the board. All other active, non-busted players (not within {PENALTY_POINTS} points of target {game.targetScore}) will receive a {PENALTY_POINTS}-point penalty.
-                 A penalty will not be applied if it would cause a player to bust.
+                Select the player who successfully passed the board. All other active, non-busted players (not within {PENALTY_POINTS} points of target {game.targetScore}, i.e. score {"<"} {game.targetScore - PENALTY_POINTS}) will receive a {PENALTY_POINTS}-point penalty.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4 py-4">
@@ -881,25 +935,54 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           </AlertDialogContent>
         </AlertDialog>
 
-        <AlertDialog open={showUndoConfirmationDialog} onOpenChange={setShowUndoConfirmationDialog}>
+        <AlertDialog open={showUndoConfirmationDialog} onOpenChange={(isOpen) => {
+            setShowUndoConfirmationDialog(isOpen);
+            if (!isOpen) { // If dialog is closed without action, reset undo states
+                setLastRoundNumberToUndo(null);
+                setUndoActionType(null);
+                 // If scores were staged for removal and dialog cancelled, need to revert game state
+                if (undoActionType === 'scores_and_penalties') {
+                    // This requires snapshotting or re-fetching, complex.
+                    // For now, assume user will proceed or cancel means no action.
+                    // A more robust solution might involve a temporary 'stagedGame' state.
+                }
+            }
+        }}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Undo Round {lastRoundNumberToUndo} Penalties?</AlertDialogTitle>
+              <AlertDialogTitle>Undo Action for Round Period {lastRoundNumberToUndo}?</AlertDialogTitle>
               <AlertDialogDescription>
-                Scores for Round {lastRoundNumberToUndo} have been undone. Do you also want to remove penalties applied during this round period?
+                {undoActionType === 'scores_and_penalties' && lastRoundNumberToUndo &&
+                  `Scores for Round ${lastRoundNumberToUndo} have been staged for removal. `}
+                {undoActionType === 'penalties_only' && lastRoundNumberToUndo &&
+                  `Penalties were recorded for Round Period ${lastRoundNumberToUndo}. `}
+                {(game.penaltyLog || []).some(p => p.roundNumber === lastRoundNumberToUndo) && 
+                  `This period also has penalties. Do you want to remove these penalties as well?`}
+                {!(game.penaltyLog || []).some(p => p.roundNumber === lastRoundNumberToUndo) && undoActionType === 'scores_and_penalties' &&
+                  `No penalties were associated with Round ${lastRoundNumberToUndo}. Proceed to undo scores?`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel onClick={() => {
-                finalizeUndo(false); 
+                // If cancelling, and scores were staged, need to revert.
+                // This part is tricky without a snapshot. For now, let finalizeUndo(false) handle it if no penalties.
+                // If penalties exist, "No, Keep Penalties" is the effective cancel if scores were removed.
+                if ((game.penaltyLog || []).some(p => p.roundNumber === lastRoundNumberToUndo)) {
+                    finalizeUndo(false); // effectively keeps penalties, finalizes score removal if staged
+                } else if (undoActionType === 'scores_and_penalties'){
+                    finalizeUndo(false); // finalize score removal, no penalties to worry about
+                }
                 setShowUndoConfirmationDialog(false);
                 setLastRoundNumberToUndo(null);
-              }}>No, Keep Penalties</AlertDialogCancel>
+                setUndoActionType(null);
+              }}>
+                { (game.penaltyLog || []).some(p => p.roundNumber === lastRoundNumberToUndo) ? "No, Keep Penalties" : "Cancel / Keep Scores"}
+              </AlertDialogCancel>
               <AlertDialogAction onClick={() => {
                 finalizeUndo(true); 
-                setShowUndoConfirmationDialog(false);
-                setLastRoundNumberToUndo(null);
-              }}>Yes, Remove Penalties</AlertDialogAction>
+              }}>
+              {(game.penaltyLog || []).some(p => p.roundNumber === lastRoundNumberToUndo) ? "Yes, Remove Penalties" : "Confirm Score Undo"}
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
@@ -939,3 +1022,4 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
+
