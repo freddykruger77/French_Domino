@@ -4,14 +4,28 @@
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gamepad2, History, Trophy, Users, Eye, ListChecks, Play } from "lucide-react";
+import { Gamepad2, History, Trophy, Users, Eye, ListChecks, Play, Trash2, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import type { GameState } from '@/lib/types';
 import { LOCAL_STORAGE_KEYS } from '@/lib/constants';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from '@/hooks/use-toast';
 
 export default function HomePage() {
   const [activeGames, setActiveGames] = useState<GameState[]>([]);
   const [isLoadingActiveGames, setIsLoadingActiveGames] = useState(true);
+  const [showRemoveConfirmDialog, setShowRemoveConfirmDialog] = useState(false);
+  const [gameToRemoveId, setGameToRemoveId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     const gameIdsString = localStorage.getItem(LOCAL_STORAGE_KEYS.ACTIVE_GAMES_LIST);
@@ -24,7 +38,6 @@ export default function HomePage() {
         })
         .filter(game => game !== null && game.isActive) as GameState[];
         
-        // Sort by creation date, most recent first
         gamesData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setActiveGames(gamesData);
       } catch (error) {
@@ -34,6 +47,45 @@ export default function HomePage() {
     }
     setIsLoadingActiveGames(false);
   }, []);
+
+  const handleRemoveGameClick = (gameId: string) => {
+    setGameToRemoveId(gameId);
+    setShowRemoveConfirmDialog(true);
+  };
+
+  const confirmRemoveGame = () => {
+    if (!gameToRemoveId) return;
+
+    try {
+      // Remove from active games list
+      const updatedGameIds = activeGames
+        .filter(game => game.id !== gameToRemoveId)
+        .map(game => game.id);
+      localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_GAMES_LIST, JSON.stringify(updatedGameIds));
+
+      // Remove individual game state
+      localStorage.removeItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameToRemoveId}`);
+
+      // Update UI
+      setActiveGames(prevGames => prevGames.filter(game => game.id !== gameToRemoveId));
+      
+      toast({
+        title: "Game Removed",
+        description: `Game ${gameToRemoveId.substring(0,10)}... has been removed.`,
+      });
+    } catch (error) {
+      console.error("Error removing game:", error);
+      toast({
+        title: "Error",
+        description: "Could not remove the game. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setShowRemoveConfirmDialog(false);
+      setGameToRemoveId(null);
+    }
+  };
+
 
   const features = [
     {
@@ -77,13 +129,13 @@ export default function HomePage() {
               <ListChecks className="h-7 w-7" />
               Resume Active Game
             </CardTitle>
-            <CardDescription>You have ongoing games. Pick up where you left off!</CardDescription>
+            <CardDescription>You have ongoing games. Pick up where you left off or remove them.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {activeGames.map(game => (
               <Card key={game.id} className="p-4 bg-secondary/30">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div>
+                  <div className="flex-grow">
                     <h4 className="font-semibold text-lg text-primary-foreground">
                       Game ID: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 6 : game.id.length)}
                     </h4>
@@ -94,11 +146,21 @@ export default function HomePage() {
                       Started: {new Date(game.createdAt).toLocaleString()}
                     </p>
                   </div>
-                  <Link href={`/game/${game.id}`} passHref>
-                    <Button variant="default" size="lg" className="w-full sm:w-auto">
-                      <Play className="mr-2 h-5 w-5" /> Resume
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto flex-shrink-0">
+                    <Link href={`/game/${game.id}`} passHref className="w-full sm:w-auto">
+                      <Button variant="default" size="lg" className="w-full">
+                        <Play className="mr-2 h-5 w-5" /> Resume
+                      </Button>
+                    </Link>
+                    <Button 
+                      variant="destructive" 
+                      size="lg" 
+                      onClick={() => handleRemoveGameClick(game.id)}
+                      className="w-full sm:w-auto"
+                    >
+                      <Trash2 className="mr-2 h-5 w-5" /> Remove
                     </Button>
-                  </Link>
+                  </div>
                 </div>
               </Card>
             ))}
@@ -132,6 +194,28 @@ export default function HomePage() {
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={showRemoveConfirmDialog} onOpenChange={setShowRemoveConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-6 w-6 text-destructive" />
+              Confirm Remove Game
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove game "{gameToRemoveId ? gameToRemoveId.substring(0,10) : ''}..."? 
+              This action cannot be undone and all game data will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setGameToRemoveId(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemoveGame} className="bg-destructive hover:bg-destructive/90">
+              Yes, Remove Game
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
