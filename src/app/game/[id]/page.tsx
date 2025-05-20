@@ -1,7 +1,9 @@
+
 import Scoreboard from "@/components/game/Scoreboard";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { use } from "react"; // Added 'use'
 
 interface GamePageProps {
   params: {
@@ -10,7 +12,8 @@ interface GamePageProps {
 }
 
 export default function GamePage({ params }: GamePageProps) {
-  const { id: gameId } = params;
+  const resolvedParams = use(params);
+  const { id: gameId } = resolvedParams;
 
   return (
     <div className="w-full">

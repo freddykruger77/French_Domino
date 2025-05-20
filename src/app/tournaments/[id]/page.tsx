@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Construction, Trophy, Users, Cog } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react"; // Added 'use'
 import type { Tournament } from '@/lib/types';
 import { LOCAL_STORAGE_KEYS } from '@/lib/constants';
 
@@ -16,7 +16,8 @@ interface TournamentDetailsPageProps {
 }
 
 export default function TournamentDetailsPage({ params }: TournamentDetailsPageProps) {
-  const { id: tournamentId } = params;
+  const resolvedParams = use(params);
+  const { id: tournamentId } = resolvedParams;
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
