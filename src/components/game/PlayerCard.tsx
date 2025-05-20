@@ -30,7 +30,7 @@ export default function PlayerCard({
   isTiedForShuffle,
   isWinner,
 }: PlayerCardProps) {
-  const isNearingBust = !player.isBusted && player.currentScore >= targetScore - PENALTY_POINTS && player.currentScore < targetScore;
+  const isNearingBustDisplayOnly = !player.isBusted && player.currentScore >= targetScore - PENALTY_POINTS && player.currentScore < targetScore;
   
   // Penalty button disabled if game inactive, player busted, OR player is in protected zone (within PENALTY_POINTS of targetScore)
   const canReceivePenaltyButton = isGameActive && !player.isBusted && player.currentScore < targetScore - PENALTY_POINTS;
@@ -44,12 +44,11 @@ export default function PlayerCard({
         statusBadge = <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-100 dark:bg-orange-900/50 flex items-center gap-1 text-base px-3 py-1 shadow-md"><Zap className="h-4 w-4" /> SHUFFLE</Badge>;
       } else if (isTiedForShuffle) {
         statusBadge = <Badge variant="outline" className="border-purple-500 text-purple-600 bg-purple-100 dark:bg-purple-900/50 flex items-center gap-1 text-sm px-2 py-1 shadow-md"><Users className="h-4 w-4" /> TIE (Shuffle/Draw Last)</Badge>;
-      } else if (isNearingBust) { // This 'isNearingBust' is for display only, penalty logic is separate
+      } else if (isNearingBustDisplayOnly) { 
         statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
       }
     } else { 
-      // If before first round and nearing bust (can happen via initial setup if target score is low, though unlikely)
-      if (isNearingBust) { 
+      if (isNearingBustDisplayOnly) { 
         statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
       }
     }
@@ -79,16 +78,19 @@ export default function PlayerCard({
         </p>
         <p className="text-xs text-muted-foreground">Target: {targetScore}</p>
       </CardContent>
-      {isGameActive && !player.isBusted && ( // Only show penalty button if game is active and player not busted
+      {isGameActive && !player.isBusted && ( 
         <CardFooter>
           <Button
             variant="outline"
             size="sm"
             onClick={onPenalty}
-            disabled={!canReceivePenaltyButton} // Updated disabled logic
+            disabled={!canReceivePenaltyButton}
             className="w-full hover:bg-destructive/10 hover:border-destructive hover:text-destructive"
             title={!canReceivePenaltyButton 
-                    ? `Cannot apply penalty (game inactive, player busted, or player is within ${PENALTY_POINTS} points of target score ${targetScore}).`
+                    ? (player.isBusted ? `${player.name} is already busted.` : 
+                       !isGameActive ? "Game is not active." :
+                       `${player.name} is protected from penalty (score ${player.currentScore}/${targetScore}). Penalty applies if score is less than ${targetScore - PENALTY_POINTS}.`
+                      )
                     : `Add ${PENALTY_POINTS} points penalty.`
                   }
           >
@@ -99,3 +101,4 @@ export default function PlayerCard({
     </Card>
   );
 }
+
