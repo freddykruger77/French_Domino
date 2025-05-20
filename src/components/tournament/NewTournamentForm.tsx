@@ -1,4 +1,5 @@
 
+      
 "use client";
 
 import { useState, useEffect, type FormEvent } from 'react';
@@ -30,6 +31,12 @@ export default function NewTournamentForm() {
   const [cachedPlayers, setCachedPlayers] = useLocalStorage<CachedPlayer[]>(LOCAL_STORAGE_KEYS.CACHED_PLAYERS, []);
   const [activeTournaments, setActiveTournaments] = useLocalStorage<string[]>(LOCAL_STORAGE_KEYS.ACTIVE_TOURNAMENTS_LIST, []);
   const [isClient, setIsClient] = useState(false);
+
+  // State for K-factors
+  const [winBonusK, setWinBonusK] = useState<number>(DEFAULT_WIN_BONUS_K);
+  const [bustPenaltyK, setBustPenaltyK] = useState<number>(DEFAULT_BUST_PENALTY_K);
+  const [pgKickerK, setPgKickerK] = useState<number>(DEFAULT_PG_KICKER_K);
+
 
   useEffect(() => {
     setIsClient(true);
@@ -115,8 +122,7 @@ export default function NewTournamentForm() {
       wins: 0,
       busts: 0,
       perfectGames: 0,
-      sumWeightedPlaces: 0,
-      // calculated scores will be computed on display
+      sumOfPositions: 0,
     }));
     
     const newTournamentId = `tournament-${Date.now()}`;
@@ -129,9 +135,9 @@ export default function NewTournamentForm() {
       gameIds: [],
       isActive: true,
       createdAt: new Date().toISOString(),
-      winBonusK: DEFAULT_WIN_BONUS_K,
-      bustPenaltyK: DEFAULT_BUST_PENALTY_K,
-      pgKickerK: DEFAULT_PG_KICKER_K,
+      winBonusK: winBonusK,
+      bustPenaltyK: bustPenaltyK,
+      pgKickerK: pgKickerK,
     };
 
     localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${newTournamentId}`, JSON.stringify(newTournament));
@@ -247,9 +253,50 @@ export default function NewTournamentForm() {
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground mt-1">
-          "Rotate Busted Players" is a planned feature. Currently, all games will use a fixed roster from the tournament.
+          "Rotate Busted Players" is a planned feature. Default mode will be used for game player selection.
         </p>
       </div>
+
+      <Card className="p-4 space-y-3 bg-muted/30">
+        <h4 className="text-md font-semibold text-primary">Tournament Scoring Factors</h4>
+        <p className="text-xs text-muted-foreground">
+          These values determine how wins, busts, and perfect games affect the "Adjusted Average Position" score. Lower final scores are better.
+        </p>
+        <div>
+          <Label htmlFor="winBonusK" className="text-sm">Win Bonus (Value subtracted per win)</Label>
+          <Input
+            id="winBonusK"
+            type="number"
+            step="0.01"
+            value={winBonusK}
+            onChange={(e) => setWinBonusK(parseFloat(e.target.value))}
+            className="w-full mt-1"
+          />
+        </div>
+        <div>
+          <Label htmlFor="bustPenaltyK" className="text-sm">Bust Penalty (Value added per bust)</Label>
+          <Input
+            id="bustPenaltyK"
+            type="number"
+            step="0.01"
+            value={bustPenaltyK}
+            onChange={(e) => setBustPenaltyK(parseFloat(e.target.value))}
+            className="w-full mt-1"
+          />
+        </div>
+        <div>
+          <Label htmlFor="pgKickerK" className="text-sm">Perfect Game Bonus (Value subtracted per PG win)</Label>
+          <Input
+            id="pgKickerK"
+            type="number"
+            step="0.01"
+            value={pgKickerK}
+            onChange={(e) => setPgKickerK(parseFloat(e.target.value))}
+            className="w-full mt-1"
+          />
+        </div>
+      </Card>
+
 
       <Button type="submit" className="w-full text-lg py-3 mt-4" size="lg">
         <PlusCircle className="mr-2 h-5 w-5" /> Create Tournament
@@ -257,3 +304,5 @@ export default function NewTournamentForm() {
     </form>
   );
 }
+
+    

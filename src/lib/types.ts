@@ -1,4 +1,5 @@
 
+      
 export interface Player {
   id: string;
   name: string;
@@ -50,14 +51,14 @@ export interface TournamentPlayerStats extends Player {
   wins: number; // W
   busts: number; // B
   perfectGames: number; // PG
-  sumWeightedPlaces: number; // Σ(Pᵢ / Tᵢ)
+  sumOfPositions: number; // Sum of Pᵢ (raw finishing place in each game)
 
-  // Calculated scores for leaderboard display
-  calculatedBaseScore?: number;
-  calculatedWinBonus?: number;
-  calculatedBustPenalty?: number;
-  calculatedPgBonus?: number;
-  finalTournamentScore?: number;
+  // Calculated scores for leaderboard display (Adjusted Average Position method)
+  displayWinBonusApplied?: number; // Total points from win bonus (e.g., wins * -0.25)
+  displayBustPenaltyApplied?: number; // Total points from bust penalty (e.g., busts * +0.50)
+  displayPgBonusApplied?: number; // Total points from PG bonus (e.g., PGs * -0.05)
+  displayAdjustedSumOfPositions?: number; // sumOfPositions + all bonus/penalty applications
+  finalTournamentScore?: number; // This is the "Average Adjusted Position"
 }
 
 export type PlayerParticipationMode = 'fixed_roster' | 'rotate_on_bust';
@@ -71,13 +72,15 @@ export interface Tournament {
   playerParticipationMode: PlayerParticipationMode;
   createdAt: string;
   isActive: boolean; // Can be manually set to false to "archive" or complete a tournament
-  // Configurable K-factors for scoring
-  winBonusK: number;
-  bustPenaltyK: number;
-  pgKickerK: number;
-  // overallTournamentWinnerId?: string; // Future: Store overall winner
+  
+  // K-factors for "Adjusted Average Position" scoring
+  winBonusK: number; // Flat value subtracted per win (e.g., 0.25)
+  bustPenaltyK: number; // Flat value added per bust (e.g., 0.50)
+  pgKickerK: number; // Flat value subtracted per perfect game win (e.g., 0.05)
 }
 
 export interface CachedPlayer extends Player {
   lastUsed: string; // ISO date string
 }
+
+    

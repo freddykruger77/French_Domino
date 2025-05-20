@@ -1,4 +1,5 @@
 
+      
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -20,34 +21,42 @@ interface TournamentDetailsPageProps {
 // Helper function to compute final tournament score for a single player
 function calculatePlayerTournamentScore(
   player: TournamentPlayerStats,
-  winBonusK: number,
-  bustPenaltyK: number,
-  pgKickerK: number
+  tournamentWinBonusK: number,
+  tournamentBustPenaltyK: number,
+  tournamentPgKickerK: number
 ): TournamentPlayerStats {
   if (player.gamesPlayed === 0) {
     return {
       ...player,
-      calculatedBaseScore: 0,
-      calculatedWinBonus: 0,
-      calculatedBustPenalty: 0,
-      calculatedPgBonus: 0,
-      finalTournamentScore: Infinity, // Ensures players with 0 games are last or handled as N/A
+      displaySumOfPositions: 0,
+      displayWinBonusApplied: 0,
+      displayBustPenaltyApplied: 0,
+      displayPgBonusApplied: 0,
+      displayAdjustedSumOfPositions: 0,
+      finalTournamentScore: Infinity, // Ensures players with 0 games are last
     };
   }
 
   const G = player.gamesPlayed;
-  const base = player.sumWeightedPlaces / G;
-  const winBonus = -winBonusK * (player.wins / G);
-  const bustPenalty = bustPenaltyK * (player.busts / G);
-  const pgBonus = -pgKickerK * (player.perfectGames / G);
-  const finalScore = base + winBonus + bustPenalty + pgBonus;
+  const sumP = player.sumOfPositions;
+  const W = player.wins;
+  const B = player.busts;
+  const PG = player.perfectGames;
+
+  const winBonusApplied = -(W * tournamentWinBonusK);
+  const bustPenaltyApplied = B * tournamentBustPenaltyK;
+  const pgBonusApplied = -(PG * tournamentPgKickerK);
+
+  const adjustedSumOfPositions = sumP + winBonusApplied + bustPenaltyApplied + pgBonusApplied;
+  const finalScore = adjustedSumOfPositions / G;
 
   return {
     ...player,
-    calculatedBaseScore: parseFloat(base.toFixed(3)),
-    calculatedWinBonus: parseFloat(winBonus.toFixed(3)),
-    calculatedBustPenalty: parseFloat(bustPenalty.toFixed(3)),
-    calculatedPgBonus: parseFloat(pgBonus.toFixed(3)),
+    displaySumOfPositions: parseFloat(sumP.toFixed(3)),
+    displayWinBonusApplied: parseFloat(winBonusApplied.toFixed(3)),
+    displayBustPenaltyApplied: parseFloat(bustPenaltyApplied.toFixed(3)),
+    displayPgBonusApplied: parseFloat(pgBonusApplied.toFixed(3)),
+    displayAdjustedSumOfPositions: parseFloat(adjustedSumOfPositions.toFixed(3)),
     finalTournamentScore: parseFloat(finalScore.toFixed(3)),
   };
 }
@@ -137,7 +146,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
       if (a.busts !== b.busts) {
         return a.busts - b.busts;
       }
-      return b.wins - a.wins;
+      return b.wins - a.wins; // More wins is better (secondary tie-breaker)
     });
   }, [tournament]);
 
@@ -167,7 +176,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
               <p>Game Target Score: {tournament.targetScore}</p>
               <p className="flex items-center gap-1"><Cog className="h-4 w-4 text-muted-foreground"/> Participation: {participationModeText(tournament.playerParticipationMode)}</p>
                <p className="text-xs text-muted-foreground">
-                Scoring: Base (Avg. Weighted Place) + Win Bonus (-{(tournament.winBonusK).toFixed(2)}) + Bust Penalty (+{(tournament.bustPenaltyK).toFixed(2)}) + PG Bonus (-{(tournament.pgKickerK).toFixed(2)})
+                Scoring: (Sum of Places - (Wins * {tournament.winBonusK.toFixed(2)}) + (Busts * {tournament.bustPenaltyK.toFixed(2)}) - (PGs * {tournament.pgKickerK.toFixed(2)})) / Games Played. Lower is better.
               </p>
             </CardDescription>
           )}
@@ -193,9 +202,9 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
               <div className="mb-6 p-4 bg-secondary/30 rounded-md">
                 <h3 className="text-xl font-semibold text-primary flex items-center gap-2 mb-3"><BarChart3 /> Leaderboard</h3>
                 {sortedPlayersWithScores.length > 0 ? (
-                  <ScrollArea className="max-h-[500px] w-full">
+                  <ScrollArea className="max-h-[600px] w-full">
                     <Table>
-                      <TableCaption>Lower final scores are better. Tie-breakers: 1. Fewer Busts, 2. More Wins.</TableCaption>
+                      <TableCaption>Lower final "Avg. Adj. Pos." scores are better. Tie-breakers: 1. Fewer Busts, 2. More Wins.</TableCaption>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[50px]">Rank</TableHead>
@@ -204,11 +213,12 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                           <TableHead className="text-center">Wins</TableHead>
                           <TableHead className="text-center">Busts</TableHead>
                           <TableHead className="text-center">PG</TableHead>
-                          <TableHead className="text-center">Base</TableHead>
-                          <TableHead className="text-center">Win&nbsp;Bonus</TableHead>
-                          <TableHead className="text-center">Bust&nbsp;Pen.</TableHead>
-                          <TableHead className="text-center">PG&nbsp;Bonus</TableHead>
-                          <TableHead className="text-center font-bold">Final&nbsp;Score</TableHead>
+                          <TableHead className="text-center">Sum P</TableHead>
+                          <TableHead className="text-center">Win Bonus</TableHead>
+                          <TableHead className="text-center">Bust Pen.</TableHead>
+                          <TableHead className="text-center">PG Bonus</TableHead>
+                          <TableHead className="text-center">Adj. Sum P</TableHead>
+                          <TableHead className="text-center font-bold">Avg. Adj. Pos.</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -220,10 +230,11 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                             <TableCell className="text-center">{player.wins}</TableCell>
                             <TableCell className="text-center">{player.busts}</TableCell>
                             <TableCell className="text-center">{player.perfectGames}</TableCell>
-                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.calculatedBaseScore?.toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.calculatedWinBonus?.toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.calculatedBustPenalty?.toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.calculatedPgBonus?.toFixed(3) : '-'}</TableCell>
+                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.sumOfPositions.toFixed(3) : '-'}</TableCell>
+                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.displayWinBonusApplied?.toFixed(3) : '-'}</TableCell>
+                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.displayBustPenaltyApplied?.toFixed(3) : '-'}</TableCell>
+                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.displayPgBonusApplied?.toFixed(3) : '-'}</TableCell>
+                            <TableCell className="text-center">{player.gamesPlayed > 0 ? player.displayAdjustedSumOfPositions?.toFixed(3) : '-'}</TableCell>
                             <TableCell className="text-center font-bold text-accent">{player.gamesPlayed > 0 ? player.finalTournamentScore?.toFixed(3) : 'N/A'}</TableCell>
                           </TableRow>
                         ))}
@@ -249,6 +260,8 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                                         <span>
                                             Game {game.gameNumberInTournament || '#'}: ID {game.id.substring(0,10)}...
                                             (Players: {game.players.map(p=>p.name).join(', ')})
+                                            {game.winnerId && ` - Winner: ${game.players.find(p=>p.id === game.winnerId)?.name || 'N/A'}`}
+                                            {!game.isActive && !game.winnerId && " - No Winner (All Busted)"}
                                         </span>
                                         <Gamepad2 className="h-4 w-4 text-muted-foreground"/>
                                     </Link>
@@ -266,7 +279,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
         </CardContent>
          <CardFooter>
             <p className="text-xs text-muted-foreground">
-                Tournament scoring uses the "Weighted-Place + Proportional Penalties" system.
+                Tournament scoring: (Sum of Places - (Wins * {tournament?.winBonusK.toFixed(2)}) + (Busts * {tournament?.bustPenaltyK.toFixed(2)}) - (PGs * {tournament?.pgKickerK.toFixed(2)})) / Games Played.
             </p>
         </CardFooter>
       </Card>
