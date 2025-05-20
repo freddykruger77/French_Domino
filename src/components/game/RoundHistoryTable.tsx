@@ -3,28 +3,28 @@
 
 import type { GameState, PlayerInGame, PenaltyLogEntry } from '@/lib/types';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ShieldAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Pencil, ShieldAlert } from 'lucide-react';
 
 interface RoundHistoryTableProps {
   game: GameState;
+  onEditScoreRequest: (roundNumber: number, playerId: string, currentScore: number) => void;
 }
 
-export default function RoundHistoryTable({ game }: RoundHistoryTableProps) {
+export default function RoundHistoryTable({ game, onEditScoreRequest }: RoundHistoryTableProps) {
   const { players, rounds, penaltyLog = [] } = game;
 
-  // Create a comprehensive list of all round numbers present in rounds or penaltyLog
   const allRoundNumbers = new Set<number>();
   rounds.forEach(r => allRoundNumbers.add(r.roundNumber));
   penaltyLog.forEach(p => allRoundNumbers.add(p.roundNumber));
   const sortedRoundNumbers = Array.from(allRoundNumbers).sort((a, b) => a - b);
 
-  // Calculate cumulative scores round by round for display
   const historyEntries: Array<{
     roundNumber: number;
     playerData: Array<{
       playerId: string;
       playerName: string;
-      scoreInRound: number | null; // Can be null if only penalties in this "period"
+      scoreInRound: number | null;
       penaltiesInPeriod: number;
       cumulativeScoreAfterPeriod: number;
     }>;
@@ -32,8 +32,7 @@ export default function RoundHistoryTable({ game }: RoundHistoryTableProps) {
 
   const currentCumulativeScores: Record<string, number> = {};
   players.forEach(p => currentCumulativeScores[p.id] = 0);
-
-  // Recalculate player.currentScore based on all rounds and all penalties up to the latest game state for accuracy
+  
   const finalPlayerScoresFromHistory: Record<string, number> = {};
     players.forEach(p => {
         let total = 0;
@@ -49,15 +48,12 @@ export default function RoundHistoryTable({ game }: RoundHistoryTableProps) {
     });
 
 
-  // Iterate through sorted round numbers to build history
-  // This ensures penalties applied outside of a normal round score submission are accounted for
-  // in the correct chronological "period".
   sortedRoundNumbers.forEach(periodNumber => {
     const entryPlayerData: Array<typeof historyEntries[0]['playerData'][0]> = [];
     const roundForThisPeriod = rounds.find(r => r.roundNumber === periodNumber);
 
     players.forEach(player => {
-      const scoreInThisRound = roundForThisPeriod ? (roundForThisPeriod.scores[player.id] || 0) : null;
+      const scoreInThisRound = roundForThisPeriod ? (roundForThisPeriod.scores[player.id] ?? 0) : null;
       
       const penaltiesForThisPlayerInThisPeriod = penaltyLog
         .filter(log => log.roundNumber === periodNumber && log.playerId === player.id)
@@ -68,11 +64,9 @@ export default function RoundHistoryTable({ game }: RoundHistoryTableProps) {
       }
       currentCumulativeScores[player.id] += penaltiesForThisPlayerInThisPeriod;
       
-      // Cap cumulative score at targetScore if busted
       const displayScore = player.isBusted && finalPlayerScoresFromHistory[player.id] >= game.targetScore 
                             ? Math.min(currentCumulativeScores[player.id], game.targetScore) 
                             : currentCumulativeScores[player.id];
-
 
       entryPlayerData.push({
         playerId: player.id,
@@ -112,8 +106,21 @@ export default function RoundHistoryTable({ game }: RoundHistoryTableProps) {
               {entry.playerData.map(pd => (
                 <TableCell key={pd.playerId} className="text-center">
                   <div className="flex flex-col items-center">
-                    {pd.scoreInRound !== null && <span>{pd.scoreInRound}</span>}
-                    {pd.scoreInRound === null && pd.penaltiesInPeriod > 0 && <span className="text-xs text-muted-foreground">-</span>}
+                    <div className="flex items-center justify-center gap-1">
+                      {pd.scoreInRound !== null && <span>{pd.scoreInRound}</span>}
+                      {pd.scoreInRound === null && pd.penaltiesInPeriod > 0 && <span className="text-xs text-muted-foreground">-</span>}
+                      {pd.scoreInRound !== null && game.isActive && ( // Only show edit if game is active or for actual scores
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 ml-1"
+                          onClick={() => onEditScoreRequest(entry.roundNumber, pd.playerId, pd.scoreInRound!)}
+                          title={`Edit score for ${pd.playerName} in Round ${entry.roundNumber}`}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
 
                     {pd.penaltiesInPeriod > 0 && (
                       <span className="text-xs text-destructive flex items-center gap-1">
@@ -133,4 +140,3 @@ export default function RoundHistoryTable({ game }: RoundHistoryTableProps) {
     </div>
   );
 }
-
