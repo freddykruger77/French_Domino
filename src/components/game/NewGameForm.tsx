@@ -112,7 +112,7 @@ export default function NewGameForm() {
       penaltyLog: [],
       aiGameRecords: [],
       tournamentId: linkedTournament ? linkedTournament.id : undefined,
-      gameNumberInTournament: linkedTournament ? (linkedTournament.gameIds.length + 1) : undefined,
+      gameNumberInTournament: linkedTournament ? (((linkedTournament.gameIds?.length || 0)) + 1) : undefined,
     };
 
     localStorage.setItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${newGameId}`, JSON.stringify(newGame));
@@ -121,7 +121,7 @@ export default function NewGameForm() {
     if (linkedTournament) {
       const updatedTournament: Tournament = {
         ...linkedTournament,
-        gameIds: [...linkedTournament.gameIds, newGameId],
+        gameIds: [...(linkedTournament.gameIds || []), newGameId],
       };
       localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${linkedTournament.id}`, JSON.stringify(updatedTournament));
       toast({ title: "Tournament Game Created!", description: `Game ${newGame.gameNumberInTournament} for tournament "${linkedTournament.name}" started.` });
@@ -151,6 +151,10 @@ export default function NewGameForm() {
     
     router.push(`/game/${newGameId}`);
   };
+
+  if (!isClient) {
+    return null; // Or a loading spinner, to avoid hydration mismatch
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -246,3 +250,4 @@ export default function NewGameForm() {
     </form>
   );
 }
+
