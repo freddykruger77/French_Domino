@@ -67,9 +67,18 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
       if (tournamentString) {
         try {
           const parsedTournament = JSON.parse(tournamentString) as Partial<Tournament>;
+          
+          let processedName = 'Unnamed Tournament';
+          if (parsedTournament.name && typeof parsedTournament.name === 'string') {
+              const trimmedName = parsedTournament.name.trim();
+              if (trimmedName.length > 0) {
+                  processedName = trimmedName;
+              }
+          }
+
           const completeTournament: Tournament = {
             id: parsedTournament.id || tournamentId,
-            name: (parsedTournament.name && parsedTournament.name.trim()) || 'Unnamed Tournament',
+            name: processedName,
             players: parsedTournament.players ?? [],
             targetScore: parsedTournament.targetScore ?? DEFAULT_TARGET_SCORE,
             playerParticipationMode: parsedTournament.playerParticipationMode ?? 'fixed_roster',
@@ -120,15 +129,18 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
 
     return playersWithCalculatedScores.sort((a, b) => {
       if (a.finalTournamentScore === undefined && b.finalTournamentScore === undefined) return 0;
-      if (a.finalTournamentScore === undefined) return 1;
+      if (a.finalTournamentScore === undefined) return 1; // players with no score (0 games) go last
       if (b.finalTournamentScore === undefined) return -1;
 
       if (a.finalTournamentScore !== b.finalTournamentScore) {
         return a.finalTournamentScore - b.finalTournamentScore;
       }
+      // Tie-breaking:
+      // 1. Fewer busts is better
       if (a.busts !== b.busts) {
         return a.busts - b.busts;
       }
+      // 2. More wins is better (for players with same score and same number of busts)
       return b.wins - a.wins;
     });
   }, [tournament]);
@@ -151,7 +163,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-primary flex items-center gap-2">
             <Trophy />
-            Tournament: {isLoading ? "Loading..." : tournament ? (tournament.name || "Unnamed Tournament") : "Not Found"}
+            Tournament: {isLoading ? "Loading..." : tournament ? tournament.name : "Not Found"}
           </CardTitle>
           {tournament && !isLoading && (
             <CardDescription className="space-y-1">
@@ -279,3 +291,4 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
     </div>
   );
 }
+
