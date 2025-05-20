@@ -42,6 +42,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const [currentRoundScores, setCurrentRoundScores] = useState<Record<string, string>>({}); // Store as strings for input
   const [showBoardPassDialog, setShowBoardPassDialog] = useState(false);
   const [boardPassIssuerId, setBoardPassIssuerId] = useState<string | null>(null);
+  const [showUndoConfirmationDialog, setShowUndoConfirmationDialog] = useState(false);
+  const [lastRoundNumberToUndo, setLastRoundNumberToUndo] = useState<number | null>(null);
+
 
   useEffect(() => {
     if (game) {
@@ -66,14 +69,14 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       ...p,
       currentScore: 0,
       isBusted: false,
-      roundScores: [],
+      roundScores: [], // Reset roundScores array for each player
     }));
 
     for (const round of rounds) {
       for (const player of newPlayerStates) {
         const scoreInRound = round.scores[player.id] || 0;
         player.currentScore += scoreInRound;
-        player.roundScores.push(scoreInRound);
+        player.roundScores.push(scoreInRound); // Store individual round score
       }
     }
 
@@ -112,8 +115,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         if (winnerPlayer.currentScore === 0) {
           winnerText += " A PERFECT GAME!";
         }
-        if (nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length === updatedPlayersList.length - 1) {
-          winnerText += " A dominant performance, outlasting all opponents!";
+        const isLoneSurvivor = nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length === updatedPlayersList.length - 1;
+        if (isLoneSurvivor) {
+           winnerText += " A dominant performance, outlasting all opponents!";
         }
         gameEndMessage = winnerText;
 
@@ -141,7 +145,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       ...updatedGameData, 
     };
     
-    const finalGameState = checkAndEndGame(nextGameState, playersListAfterAction); // Pass playersListAfterAction here
+    const finalGameState = checkAndEndGame(nextGameState, playersListAfterAction);
     setGame(finalGameState);
 
     if (!finalGameState.isActive) {
@@ -205,7 +209,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       rounds: [...game.rounds, newRoundData],
       currentRoundNumber: game.currentRoundNumber + 1,
       aiGameRecords: [
-        ...(game.aiGameRecords || []), // Ensure aiGameRecords is initialized
+        ...(game.aiGameRecords || []), 
         {
           roundNumber: newRoundData.roundNumber,
           playerScores: game.players.map(initialPlayer => newRoundData.scores[initialPlayer.id] ?? 0)
@@ -245,7 +249,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             title: "Penalty Blocked", 
             description: `${playerToUpdate.name} is within ${PENALTY_POINTS} points of busting (${playerToUpdate.currentScore}/${game.targetScore}) and cannot receive this penalty.`, 
             variant: "default",
-            duration: 5000
+            duration: 6000
         });
         return;
     }
@@ -256,7 +260,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return {
           ...p,
           currentScore: newScore,
-          isBusted: newScore >= game.targetScore, // Player can bust from penalty
+          isBusted: newScore >= game.targetScore,
         };
       }
       return p;
@@ -291,7 +295,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       return;
     }
 
-
     let penaltiesAppliedCount = 0;
     let protectedFromPenaltyCount = 0;
     let newlyBustedCountByBoardPass = 0;
@@ -322,7 +325,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       return {
         ...player,
         currentScore: newScoreForReceiver,
-        isBusted: newScoreForReceiver >= game.targetScore, // Player can bust from board pass
+        isBusted: newScoreForReceiver >= game.targetScore, 
       };
     });
     
@@ -367,54 +370,85 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     setBoardPassIssuerId(null);
   };
 
-  const handleUndoLastRound = () => {
+  const triggerUndoLastRound = () => {
     if (!game || game.rounds.length === 0) {
       toast({ title: "Cannot Undo", description: "No rounds have been scored yet.", variant: "destructive" });
       return;
     }
+    const roundNumToUndo = game.rounds[game.rounds.length - 1].roundNumber;
+    setLastRoundNumberToUndo(roundNumToUndo);
 
-    const lastRoundNumber = game.rounds[game.rounds.length - 1].roundNumber;
+    // Remove scores and AI record immediately
     const newRounds = game.rounds.slice(0, -1);
-    const newPenaltyLog = (game.penaltyLog || []).filter(p => p.roundNumber !== lastRoundNumber);
     const newAiGameRecords = (game.aiGameRecords || []).slice(0, -1);
     
-    const currentRoundAfterUndo = newRounds.length + 1;
+    setGame(prevGame => {
+      if (!prevGame) return null;
+      return {
+        ...prevGame,
+        rounds: newRounds,
+        aiGameRecords: newAiGameRecords,
+        // currentRoundNumber will be adjusted after penalty decision
+      };
+    });
 
-    // Recalculate all player scores and bust statuses from the beginning
+    // Check if penalties exist for this round to decide if dialog is needed
+    const penaltiesExistForRound = (game.penaltyLog || []).some(p => p.roundNumber === roundNumToUndo);
+    if (penaltiesExistForRound) {
+      setShowUndoConfirmationDialog(true);
+    } else {
+      // No penalties, proceed to finalize undo
+      finalizeUndo(false); // false means don't remove penalties (as none exist for this round)
+    }
+  };
+  
+  const finalizeUndo = (removePenalties: boolean) => {
+    if (!game || lastRoundNumberToUndo === null) return;
+
+    let newPenaltyLog = [...(game.penaltyLog || [])];
+    if (removePenalties) {
+      newPenaltyLog = newPenaltyLog.filter(p => p.roundNumber !== lastRoundNumberToUndo);
+    }
+    
+    // Important: use the game state that already has rounds/aiRecords removed
+    const gameAfterScoreUndo = { ...game, rounds: game.rounds, aiGameRecords: game.aiGameRecords };
+
+
+    const currentRoundAfterUndo = gameAfterScoreUndo.rounds.length + 1;
+
     const recalculatedPlayers = recalculatePlayerStatesFromHistory(
-      [...game.players], // Pass a fresh copy
-      newRounds,
+      [...gameAfterScoreUndo.players], 
+      gameAfterScoreUndo.rounds, // Use already updated rounds
       newPenaltyLog,
-      game.targetScore
+      gameAfterScoreUndo.targetScore
     );
 
     const updatedGameData: Partial<GameState> = {
-      rounds: newRounds,
       penaltyLog: newPenaltyLog,
       currentRoundNumber: currentRoundAfterUndo,
-      aiGameRecords: newAiGameRecords,
-      isActive: true, // Game becomes active again, checkAndEndGame will verify
-      winnerId: undefined, // Reset winner, checkAndEndGame will re-evaluate
+      isActive: true, 
+      winnerId: undefined, 
     };
-
-    // Create a temporary game state to pass to checkAndEndGame
+    
     const tempGameForCheck: GameState = {
-      ...game,
+      ...gameAfterScoreUndo,
       ...updatedGameData,
-      players: recalculatedPlayers, // Use recalculated players here
+      players: recalculatedPlayers,
     };
     
     const finalGameStateAfterUndo = checkAndEndGame(tempGameForCheck, recalculatedPlayers);
     
     setGame({
-        ...game,
-        ...updatedGameData, // Apply core changes
-        players: finalGameStateAfterUndo.players, // Use players from checkAndEndGame
-        isActive: finalGameStateAfterUndo.isActive, // Use isActive from checkAndEndGame
-        winnerId: finalGameStateAfterUndo.winnerId, // Use winnerId from checkAndEndGame
+        ...gameAfterScoreUndo, // Start from the state where scores were already undone
+        ...updatedGameData,
+        players: finalGameStateAfterUndo.players,
+        isActive: finalGameStateAfterUndo.isActive,
+        winnerId: finalGameStateAfterUndo.winnerId,
     });
 
-    toast({ title: "Undo Successful", description: `Round ${lastRoundNumber} scores and associated penalties have been removed.` });
+    toast({ title: "Undo Successful", description: `Round ${lastRoundNumberToUndo} scores ${removePenalties ? 'and associated penalties have' : 'have'} been removed.` });
+    setShowUndoConfirmationDialog(false);
+    setLastRoundNumberToUndo(null);
   };
 
 
@@ -460,21 +494,18 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
   const potentialBoardPassIssuers = game.players.filter(p => !p.isBusted && game.isActive);
   
-  const potentialBoardPassReceiversExist = game.players.some(p => 
-    p.id !== boardPassIssuerId && 
-    !p.isBusted && 
-    game.isActive &&
-    p.currentScore < game.targetScore - PENALTY_POINTS // This ensures they CAN receive penalty without busting from it, as per current rule
-  );
-  
   const canEnableBoardPassButtonGlobal = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
-                                   game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted); // Simpler check for button enabling: are there issuers and any other non-busted players?
+                                   game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted); 
 
   const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
-  const boardPassDialogConfirmDisabled = !game.isActive || !boardPassIssuerId || 
-                                         !game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted && p.currentScore < game.targetScore - PENALTY_POINTS);
 
+  const boardPassDialogConfirmDisabled = !game.isActive || !boardPassIssuerId || 
+                                         !game.players.some(p => 
+                                            p.id !== boardPassIssuerId && 
+                                            !p.isBusted && 
+                                            p.currentScore < game.targetScore - PENALTY_POINTS
+                                          );
 
   return (
     <Card className="w-full shadow-xl">
@@ -571,7 +602,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               {playersOver150.length > 0 && (
                 <p><strong>Reached Over 150 Points:</strong> {playersOver150.map(p => `${p.name} (${p.currentScore})`).join(', ')}</p>
               )}
-              {(winner?.currentScore !== 0 && !isLoneSurvivorWin && playersWithHighestScore.length === 0 && playersOver150.length === 0 && !(winner && bustedPlayersOnGameOver.length === game.players.length -1)) && ( // Check if not a lone survivor win already covered
+              {(winner?.currentScore !== 0 && !isLoneSurvivorWin && playersWithHighestScore.length === 0 && playersOver150.length === 0 && !(winner && bustedPlayersOnGameOver.length === game.players.length -1)) && ( 
                 <p className="text-muted-foreground">No special milestones recorded for this game beyond the winner.</p>
               )}
             </CardContent>
@@ -593,8 +624,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                   <Button 
                     variant="outline" 
                     size="sm" 
-                    onClick={handleUndoLastRound} 
-                    disabled={game.rounds.length === 0}
+                    onClick={triggerUndoLastRound} 
+                    disabled={game.rounds.length === 0 && (game.penaltyLog || []).filter(p => p.roundNumber === game.currentRoundNumber-1).length === 0} // disable if no rounds and no penalties for prev round
                     className="mt-4"
                   >
                     <Undo2 className="mr-2 h-4 w-4" /> Undo Last Scored Round
@@ -702,6 +733,29 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               >
                 Confirm Board Pass
               </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={showUndoConfirmationDialog} onOpenChange={setShowUndoConfirmationDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Undo Round {lastRoundNumberToUndo} Penalties?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Scores for Round {lastRoundNumberToUndo} have been undone. Do you also want to remove penalties applied during this round period?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                finalizeUndo(false); // Keep penalties
+                setShowUndoConfirmationDialog(false);
+                setLastRoundNumberToUndo(null);
+              }}>No, Keep Penalties</AlertDialogCancel>
+              <AlertDialogAction onClick={() => {
+                finalizeUndo(true); // Remove penalties
+                setShowUndoConfirmationDialog(false);
+                setLastRoundNumberToUndo(null);
+              }}>Yes, Remove Penalties</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
