@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, PlusCircle, Trophy, Trash2, Eye, AlertTriangle } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trophy, Trash2, Eye, AlertTriangle, Cog } from "lucide-react";
 import Link from "next/link";
 import type { Tournament } from '@/lib/types';
 import { LOCAL_STORAGE_KEYS } from '@/lib/constants';
@@ -56,16 +56,13 @@ export default function TournamentsPage() {
     if (!tournamentToRemoveId) return;
 
     try {
-      // Remove from active tournaments list
       const updatedTournamentIds = tournaments
         .filter(t => t.id !== tournamentToRemoveId)
         .map(t => t.id);
       localStorage.setItem(LOCAL_STORAGE_KEYS.ACTIVE_TOURNAMENTS_LIST, JSON.stringify(updatedTournamentIds));
 
-      // Remove individual tournament state
       localStorage.removeItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournamentToRemoveId}`);
 
-      // Update UI
       setTournaments(prev => prev.filter(t => t.id !== tournamentToRemoveId));
       
       toast({
@@ -84,6 +81,12 @@ export default function TournamentsPage() {
       setTournamentToRemoveId(null);
     }
   };
+  
+  const participationModeTextShort = (mode?: string) => {
+    if (mode === 'fixed_roster') return 'Fixed Roster';
+    if (mode === 'rotate_on_bust') return 'Rotate Busted (TBD)';
+    return 'N/A';
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-8">
@@ -120,8 +123,10 @@ export default function TournamentsPage() {
                 <Card key={tournament.id} className="bg-secondary/30">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-xl text-primary-foreground">{tournament.name}</CardTitle>
-                    <CardDescription>
-                      Created: {new Date(tournament.createdAt).toLocaleDateString()} | Target Score: {tournament.targetScore} | {tournament.players.length} Players
+                    <CardDescription className="text-xs space-y-0.5">
+                      <p>Created: {new Date(tournament.createdAt).toLocaleDateString()}</p>
+                      <p>Target Score: {tournament.targetScore} | {tournament.players.length} Players</p>
+                      <p className="flex items-center gap-1"><Cog className="h-3 w-3"/> Mode: {participationModeTextShort(tournament.playerParticipationMode)}</p>
                     </CardDescription>
                   </CardHeader>
                   <CardFooter className="flex justify-end gap-2">

@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, MAX_PLAYERS, LOCAL_STORAGE_KEYS } from '@/lib/constants';
-import type { Tournament, TournamentPlayerStats, CachedPlayer, Player } from '@/lib/types';
+import type { Tournament, TournamentPlayerStats, CachedPlayer, Player, PlayerParticipationMode } from '@/lib/types';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import { PlusCircle, UserPlus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -24,6 +24,7 @@ export default function NewTournamentForm() {
   const [numPlayers, setNumPlayers] = useState<number>(4);
   const [playerNames, setPlayerNames] = useState<string[]>(Array(MAX_PLAYERS).fill(''));
   const [targetScore, setTargetScore] = useState<number>(DEFAULT_TARGET_SCORE);
+  const [playerParticipationMode, setPlayerParticipationMode] = useState<PlayerParticipationMode>('fixed_roster');
   
   const [cachedPlayers, setCachedPlayers] = useLocalStorage<CachedPlayer[]>(LOCAL_STORAGE_KEYS.CACHED_PLAYERS, []);
   const [activeTournaments, setActiveTournaments] = useLocalStorage<string[]>(LOCAL_STORAGE_KEYS.ACTIVE_TOURNAMENTS_LIST, []);
@@ -58,7 +59,7 @@ export default function NewTournamentForm() {
     }
 
     const currentTournamentPlayers: Player[] = playerNames.slice(0, numPlayers).map((name, index) => ({
-      id: `player-${Date.now()}-${index}`, // Tournament player IDs can be independent of game player IDs
+      id: `player-tourney-${Date.now()}-${index}`,
       name: name.trim() || `Player ${index + 1}`,
     }));
 
@@ -74,6 +75,7 @@ export default function NewTournamentForm() {
       averageRank: 0,
       totalPoints: 0,
       roundsIn90sWithoutBusting: 0,
+      gamesPlayed: 0,
     }));
     
     const newTournamentId = `tournament-${Date.now()}`;
@@ -82,6 +84,7 @@ export default function NewTournamentForm() {
       name: tournamentName.trim(),
       players: tournamentPlayerStats,
       targetScore,
+      playerParticipationMode,
       gameIds: [],
       isActive: true,
       createdAt: new Date().toISOString(),
@@ -107,7 +110,7 @@ export default function NewTournamentForm() {
     );
     
     toast({ title: "Tournament Created!", description: `Tournament "${newTournament.name}" started successfully.` });
-    router.push(`/tournaments`); // Redirect to the main tournaments list page
+    router.push(`/tournaments`);
   };
 
   return (
@@ -189,6 +192,25 @@ export default function NewTournamentForm() {
           onChange={(e) => setTargetScore(Number(e.target.value))}
           className="w-full mt-1"
         />
+      </div>
+
+      <div>
+        <Label htmlFor="playerParticipationMode" className="text-base">Player Participation Mode</Label>
+        <Select
+          value={playerParticipationMode}
+          onValueChange={(value) => setPlayerParticipationMode(value as PlayerParticipationMode)}
+        >
+          <SelectTrigger id="playerParticipationMode" className="w-full mt-1">
+            <SelectValue placeholder="Select participation mode" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="fixed_roster">Fixed Roster (All tournament players in each game)</SelectItem>
+            <SelectItem value="rotate_on_bust">Rotate Busted Players (Gameplay TBD)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground mt-1">
+          "Rotate Busted Players" is a planned feature. Currently, all games will use a fixed roster from the tournament.
+        </p>
       </div>
 
       <Button type="submit" className="w-full text-lg py-3 mt-4" size="lg">

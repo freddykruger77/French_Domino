@@ -1,5 +1,4 @@
 
-
 export interface Player {
   id: string;
   name: string;
@@ -36,38 +35,40 @@ export interface GameState {
   isActive: boolean;
   createdAt: string; // ISO date string
   winnerId?: string; // playerId
-  penaltyLog: PenaltyLogEntry[]; // Log of penalties applied - made non-optional
-  // For AI collusion detection
-  // This matches the AI input structure DetectCollusionInput.gameRecords
-  // playerScores array needs to maintain consistent player order across rounds.
-  // This order can be based on the initial players array order.
+  penaltyLog: PenaltyLogEntry[];
   aiGameRecords: {
     roundNumber: number;
-    playerScores: number[]; // scores for player1, player2, player3, player4 in order
+    playerScores: number[];
   }[];
 }
 
 export interface TournamentPlayerStats extends Player {
   tournamentGamesWon: number;
   tournamentTimesBusted: number;
-  averageRank: number;
-  totalPoints: number;
-  roundsIn90sWithoutBusting: number;
+  averageRank: number; // Lower is better
+  totalPoints: number; // Cumulative points across all games in tournament
+  roundsIn90sWithoutBusting: number; // Placeholder, logic TBD
+  gamesPlayed: number;
 }
+
+export type PlayerParticipationMode = 'fixed_roster' | 'rotate_on_bust';
 
 export interface Tournament {
   id: string;
   name: string;
   gameIds: string[];
   players: TournamentPlayerStats[];
-  targetScore: number;
+  targetScore: number; // Target score for games within this tournament
+  playerParticipationMode: PlayerParticipationMode;
   createdAt: string;
-  isActive: boolean;
-  winnerId?: string; // playerId
+  isActive: boolean; // Can be manually set to false to "archive" or complete a tournament
+  winnerId?: string; // Overall tournament winner (Player ID)
+  // Future: Could add tournament specific rules here, e.g.
+  // numberOfGamesToPlay?: number;
+  // pointsForWin?: number;
+  // pointsForSecond?: number; etc.
 }
 
-// Used for storing player names for quick selection
 export interface CachedPlayer extends Player {
   lastUsed: string; // ISO date string
 }
-

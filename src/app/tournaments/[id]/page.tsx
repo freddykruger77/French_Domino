@@ -3,7 +3,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Construction, Trophy } from "lucide-react";
+import { ArrowLeft, Construction, Trophy, Users, Cog } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Tournament } from '@/lib/types';
@@ -34,6 +34,12 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
     setIsLoading(false);
   }, [tournamentId]);
 
+  const participationModeText = (mode?: string) => {
+    if (mode === 'fixed_roster') return 'Fixed Roster (All players in each game)';
+    if (mode === 'rotate_on_bust') return 'Rotate Busted Players (Gameplay TBD)';
+    return 'N/A';
+  }
+
   return (
     <div className="max-w-4xl mx-auto py-8">
       <Link href="/tournaments" passHref>
@@ -47,9 +53,15 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
             <Trophy />
             Tournament: {isLoading ? "Loading..." : tournament ? tournament.name : "Not Found"}
           </CardTitle>
-          <CardDescription>
-            {isLoading ? "Loading details..." : tournament ? `ID: ${tournament.id.substring(0,11)}... | Target Score: ${tournament.targetScore}` : "Tournament data could not be loaded."}
-          </CardDescription>
+          {tournament && !isLoading && (
+            <CardDescription className="space-y-1">
+              <p>ID: {tournament.id.substring(0,11)}...</p>
+              <p>Target Score for Games: {tournament.targetScore}</p>
+              <p className="flex items-center gap-1"><Cog className="h-4 w-4 text-muted-foreground"/> Participation: {participationModeText(tournament.playerParticipationMode)}</p>
+            </CardDescription>
+          )}
+           {isLoading && <CardDescription>Loading details...</CardDescription>}
+           {!isLoading && !tournament && <CardDescription>Tournament data could not be loaded.</CardDescription>}
         </CardHeader>
         <CardContent className="text-center py-12">
           {isLoading ? (
@@ -64,9 +76,9 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
               <p className="text-sm text-muted-foreground mt-1">Features for adding games, viewing leaderboards, and calculating winner stats are coming soon!</p>
               
               <div className="mt-6 text-left text-sm bg-muted/30 p-4 rounded-md">
-                <h3 className="font-semibold mb-2 text-primary">Current Players:</h3>
+                <h3 className="font-semibold mb-2 text-primary flex items-center gap-1"><Users className="h-4 w-4"/>Current Players:</h3>
                 <ul className="list-disc list-inside">
-                  {tournament.players.map(p => <li key={p.id}>{p.name}</li>)}
+                  {tournament.players.map(p => <li key={p.id}>{p.name} (Games Won: {p.tournamentGamesWon}, Busted: {p.tournamentTimesBusted})</li>)}
                 </ul>
               </div>
             </>
