@@ -91,7 +91,6 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
           };
           setTournament(completeTournament);
 
-          // Load linked games
           const gamesData: GameState[] = (completeTournament.gameIds || []).map(gameId => {
             const gameString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`);
             return gameString ? JSON.parse(gameString) as GameState : null;
@@ -129,18 +128,15 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
 
     return playersWithCalculatedScores.sort((a, b) => {
       if (a.finalTournamentScore === undefined && b.finalTournamentScore === undefined) return 0;
-      if (a.finalTournamentScore === undefined) return 1; // players with no score (0 games) go last
+      if (a.finalTournamentScore === undefined) return 1; 
       if (b.finalTournamentScore === undefined) return -1;
 
       if (a.finalTournamentScore !== b.finalTournamentScore) {
         return a.finalTournamentScore - b.finalTournamentScore;
       }
-      // Tie-breaking:
-      // 1. Fewer busts is better
       if (a.busts !== b.busts) {
         return a.busts - b.busts;
       }
-      // 2. More wins is better (for players with same score and same number of busts)
       return b.wins - a.wins;
     });
   }, [tournament]);
@@ -265,20 +261,6 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                 </CardContent>
               </Card>
 
-              <Card className="mt-6 border-dashed border-primary/50">
-                <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2"><Info className="text-primary"/>How to Update Player Stats</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <p className="text-sm text-muted-foreground">
-                        After completing a game linked to this tournament, the game's results (winner, busts, scores) need to be processed to update the player statistics on this leaderboard.
-                        The UI for automatically updating these stats after a linked game finishes is planned for a future update.
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                        (Developer Note: The current implementation does not yet automatically update tournament player stats after a game is completed. This functionality needs to be built, likely triggered from the `Scoreboard.tsx` component when a game with a `tournamentId` becomes inactive.)
-                    </p>
-                </CardContent>
-              </Card>
             </>
           )}
         </CardContent>
@@ -292,3 +274,4 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
   );
 }
 
+    
