@@ -84,7 +84,7 @@ export default function TournamentsPage() {
   
   const participationModeTextShort = (mode?: string) => {
     if (mode === 'fixed_roster') return 'Fixed Roster';
-    if (mode === 'rotate_on_bust') return 'Rotate Busted (TBD)';
+    if (mode === 'rotate_on_bust') return 'Rotate Busted';
     return 'N/A';
   }
 

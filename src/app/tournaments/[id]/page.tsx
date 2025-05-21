@@ -174,7 +174,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
 
   const participationModeText = (mode?: string) => {
     if (mode === 'fixed_roster') return 'Fixed Roster (All players in each game)';
-    if (mode === 'rotate_on_bust') return 'Rotate Busted Players (Gameplay TBD)';
+    if (mode === 'rotate_on_bust') return 'Rotate Busted Players';
     return 'N/A';
   }
 

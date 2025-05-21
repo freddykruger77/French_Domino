@@ -26,7 +26,7 @@ export default function NewTournamentForm() {
   const [numPlayers, setNumPlayers] = useState<number>(INITIAL_DEFAULT_PLAYERS);
   const [playerNames, setPlayerNames] = useState<string[]>(Array(INITIAL_DEFAULT_PLAYERS).fill(''));
   const [targetScore, setTargetScore] = useState<number>(DEFAULT_TARGET_SCORE);
-  const [playerParticipationMode, setPlayerParticipationMode] = useState<PlayerParticipationMode>('fixed_roster');
+  const [playerParticipationMode, setPlayerParticipationMode] = useState<PlayerParticipationMode>('rotate_on_bust');
   
   const [cachedPlayers, setCachedPlayers] = useLocalStorage<CachedPlayer[]>(LOCAL_STORAGE_KEYS.CACHED_PLAYERS, []);
   const [activeTournaments, setActiveTournaments] = useLocalStorage<string[]>(LOCAL_STORAGE_KEYS.ACTIVE_TOURNAMENTS_LIST, []);
@@ -248,12 +248,12 @@ export default function NewTournamentForm() {
             <SelectValue placeholder="Select participation mode" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="rotate_on_bust">Rotate Busted Players</SelectItem>
             <SelectItem value="fixed_roster">Fixed Roster (All tournament players in each game)</SelectItem>
-            <SelectItem value="rotate_on_bust">Rotate Busted Players (Gameplay TBD)</SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground mt-1">
-          "Rotate Busted Players" is a planned feature. Default mode will be used for game player selection.
+          "Rotate Busted Players" prioritizes non-busted players from the last game.
         </p>
       </div>
 
