@@ -142,19 +142,45 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const handleFinalizeTournamentGame = useCallback((finalGameData: GameState) => {
     if (!finalGameData.tournamentId) return;
 
+    // Robust check for already applied stats using fresh data from localStorage
+    const gameKeyForStatCheck = `${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${finalGameData.id}`;
+    const gameDataStringForStatCheck = localStorage.getItem(gameKeyForStatCheck);
+
+    if (gameDataStringForStatCheck) {
+        try {
+            const gameDataFromLS = JSON.parse(gameDataStringForStatCheck) as GameState;
+            if (gameDataFromLS.statsAppliedToTournament) {
+                console.log(`Stats for game ${finalGameData.id} (tournament ${finalGameData.tournamentId}) already applied. Skipping.`);
+                // Ensure the scoreboard's local React state for 'game' also reflects this, if it's the current game.
+                if (game && game.id === finalGameData.id && !game.statsAppliedToTournament) {
+                    setGame(prev => prev ? { ...prev, statsAppliedToTournament: true } : null);
+                }
+                return;
+            }
+        } catch (e) {
+            console.error("Error parsing game data for stat check in handleFinalizeTournamentGame:", e);
+            // Depending on strictness, might return here or proceed with caution
+        }
+    } else {
+        // This case (game not found in LS during stat finalization) is problematic.
+        // It implies the game might have been deleted or there's a serious inconsistency.
+        console.error(`Critical: Game ${finalGameData.id} for tournament ${finalGameData.tournamentId} not found in localStorage during stat finalization. Aborting stat update for this game.`);
+        toast({ title: "Tournament Sync Error", description: `Could not find game ${finalGameData.id.substring(5,10)} to finalize stats. Please check data integrity.`, variant: "destructive", duration: 7000});
+        return;
+    }
+
+
     const tournamentString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${finalGameData.tournamentId}`);
     if (!tournamentString) {
-      console.error(`Tournament ${finalGameData.tournamentId} not found for stat update.`);
+      console.error(`Tournament ${finalGameData.tournamentId} not found for stat update for game ${finalGameData.id}.`);
       toast({ title: "Tournament Error", description: "Could not find tournament data to update stats.", variant: "destructive" });
       return;
     }
 
     try {
       const tournament: Tournament = JSON.parse(tournamentString);
+      const T_i = finalGameData.players.length; 
 
-      const T_i = finalGameData.players.length; // Table size for this game
-
-      // Sort all players who participated in this game to determine their rank P_i
       const gamePlayersSortedForRank = [...finalGameData.players].sort((a, b) => {
         if (a.isBusted && !b.isBusted) return 1; 
         if (!a.isBusted && b.isBusted) return -1;
@@ -166,11 +192,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         if (!gamePlayerInstance) return tourneyPlayer; 
 
         const rankInGame = gamePlayersSortedForRank.findIndex(p => p.id === gamePlayerInstance.id);
-        let P_i_game = rankInGame !== -1 ? rankInGame + 1 : T_i + 1; // Default to last if somehow not found
-        if (gamePlayerInstance.isBusted) {
-            P_i_game = T_i + 1;
-        }
-
+        let P_i_game = rankInGame !== -1 ? rankInGame + 1 : T_i + 1; 
 
         const wonThisGame = !gamePlayerInstance.isBusted && P_i_game === 1; 
         const perfectGameThisGame = wonThisGame && gamePlayerInstance.currentScore === 0;
@@ -187,18 +209,15 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
       localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournament.id}`, JSON.stringify(tournament));
       
-      // Mark the game as processed for tournament stats
-      const gameKeyToMark = `${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${finalGameData.id}`;
-      const gameStringToMark = localStorage.getItem(gameKeyToMark);
+      const gameStringToMark = localStorage.getItem(gameKeyForStatCheck); // Re-fetch game data before marking
       if (gameStringToMark) {
           try {
               const parsedGameToMark = JSON.parse(gameStringToMark) as GameState;
               const gameToSaveWithFlag = { ...parsedGameToMark, statsAppliedToTournament: true };
-              localStorage.setItem(gameKeyToMark, JSON.stringify(gameToSaveWithFlag));
+              localStorage.setItem(gameKeyForStatCheck, JSON.stringify(gameToSaveWithFlag));
 
-              // If this finalized game is the one currently on the scoreboard, update its state in Scoreboard.tsx
               if (game && game.id === finalGameData.id) {
-                  setGame(gameToSaveWithFlag);
+                  setGame(gameToSaveWithFlag); // Update local React state
               }
               toast({ title: "Tournament Stats Updated", description: `Results from game ${finalGameData.gameNumberInTournament || finalGameData.id.substring(5,10)} applied to tournament.` });
           } catch (e) {
@@ -206,8 +225,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               toast({ title: "Error", description: "Could not mark game as processed for tournament.", variant: "destructive" });
           }
       } else {
-          console.error("Could not find game state in local storage to mark stats as applied:", finalGameData.id);
-          toast({ title: "Error", description: "Could not find game to mark as processed for tournament.", variant: "destructive" });
+          console.error("Could not find game state in local storage to mark stats as applied (second fetch):", finalGameData.id);
+          toast({ title: "Error", description: "Could not find game to mark as processed (stat update).", variant: "destructive" });
       }
 
     } catch (e) {
@@ -274,12 +293,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     };
     
     const finalGameState = checkAndEndGame(nextGameState, playersListAfterAction);
-    setGame(finalGameState);
+    setGame(finalGameState); // This state update might trigger re-renders
 
     if (!finalGameState.isActive) {
       setShowAddScoreDialog(false);
       setShowBoardPassDialog(false);
       setShowEditScoreDialog(false);
+      // Check statsAppliedToTournament flag from finalGameState BEFORE calling handleFinalizeTournamentGame
       if (finalGameState.tournamentId && !finalGameState.statsAppliedToTournament) {
         handleFinalizeTournamentGame(finalGameState);
       }
@@ -555,7 +575,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       currentRoundNumber: currentRoundAfterUndo,
       isActive: true, 
       winnerId: undefined, 
-      statsAppliedToTournament: false, // Reset flag as game results changed
+      statsAppliedToTournament: false, 
     };
     
     const tempGameForCheck: GameState = {
@@ -623,7 +643,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       isActive: true, 
       winnerId: undefined, 
       currentRoundNumber: game.rounds.length + 1, 
-      statsAppliedToTournament: false, // Reset flag as game results changed
+      statsAppliedToTournament: false, 
     };
     
     const tempGameForCheck: GameState = {
@@ -723,7 +743,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       aiGameRecords: newAiGameRecords,
       isActive: true, 
       winnerId: undefined, 
-      statsAppliedToTournament: false, // Reset flag as game results changed
+      statsAppliedToTournament: false, 
     };
 
     const tempGameForCheck: GameState = {
