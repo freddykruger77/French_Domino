@@ -33,7 +33,7 @@ export default function NewGameForm() {
 
   const tournamentIdFromQuery = searchParams.get('tournamentId');
 
-  const [numPlayers, setNumPlayers] = useState<number>(MAX_PLAYERS); // Default for non-tournament, will be overridden by tournament
+  const [numPlayers, setNumPlayers] = useState<number>(MAX_PLAYERS); 
   const [playerNames, setPlayerNames] = useState<string[]>(Array(MAX_PLAYERS).fill(''));
   const [targetScore, setTargetScore] = useState<number>(DEFAULT_TARGET_SCORE);
   
@@ -130,6 +130,7 @@ export default function NewGameForm() {
                 selectedPlayerNames = performStandardRandomSelection();
             }
         } else { 
+             // No last game string found, maybe first game after setting mode or error.
             selectedPlayerNames = performStandardRandomSelection();
         }
     } else { 
@@ -147,7 +148,7 @@ export default function NewGameForm() {
           const tournamentData = JSON.parse(tournamentString) as Tournament;
           setLinkedTournament(tournamentData);
           
-          const gameSizeForThisGame = Math.min(4, (tournamentData.players || []).length > 0 ? (tournamentData.players || []).length : 4);
+          const gameSizeForThisGame = Math.min(MAX_PLAYERS, (tournamentData.players || []).length > 0 ? (tournamentData.players || []).length : MAX_PLAYERS);
           setNumPlayers(gameSizeForThisGame); 
           setTargetScore(tournamentData.targetScore);
           initializePlayerNamesForTournament(tournamentData, gameSizeForThisGame);
@@ -201,11 +202,13 @@ export default function NewGameForm() {
     let currentPlayersData: PlayerInGame[];
 
     if (linkedTournament) {
+      // Ensure all selected names for the game exist in the tournament roster to get their correct IDs
       const gamePlayersFromTournamentRoster = currentActivePlayerNames.map((name, index) => {
         const tournamentPlayer = linkedTournament.players.find(p => p.name === name.trim());
         if (!tournamentPlayer) {
-            // This should ideally not happen if the UI correctly lists tournament players
-            toast({ title: "Player Error", description: `Player "${name}" not found in tournament roster. Using temporary ID.`, variant: "destructive"});
+            // This case should be rare if UI properly filters quick-adds for tournament players
+            // Or if user manually types a non-tournament player
+            toast({ title: "Player Error", description: `Player "${name}" not found in tournament roster. Using temporary ID for this game.`, variant: "destructive"});
             return {
                 id: `player-temp-${Date.now()}-${index}`, // Fallback ID
                 name: name.trim(),
@@ -245,6 +248,7 @@ export default function NewGameForm() {
       aiGameRecords: [],
       tournamentId: linkedTournament ? linkedTournament.id : undefined,
       gameNumberInTournament: linkedTournament ? (((linkedTournament.gameIds?.length || 0)) + 1) : undefined,
+      statsAppliedToTournament: false,
     };
 
     localStorage.setItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${newGameId}`, JSON.stringify(newGame));
@@ -294,22 +298,19 @@ export default function NewGameForm() {
     return <div className="p-4 text-center">Loading tournament game setup...</div>;
   }
   if (!isClient && !tournamentIdFromQuery) {
-    return null;
+    return <div className="p-4 text-center">Loading game setup...</div>;
   }
 
 
   const playerSourceForQuickAdd = linkedTournament 
-    ? linkedTournament.players.map(p => ({id: p.id, name: p.name, lastUsed: ''})) // Use tournament roster
-    : cachedPlayers; // Use cached players for non-tournament games
+    ? (linkedTournament.players || []).map(p => ({id: p.id, name: p.name, lastUsed: ''}))
+    : cachedPlayers; 
 
-  // This is the actual number of players for THIS GAME, which might be less than the total tournament roster
-  const gamePlayerCountForForm = linkedTournament 
-    ? numPlayers // numPlayers is set by initializePlayerNamesForTournament for tournament games
-    : numPlayers; // numPlayers is set by user for non-tournament games
+  const gamePlayerCountForForm = numPlayers;
 
   const handleReshuffleTournamentPlayers = () => {
     if (linkedTournament) {
-        const gameSize = Math.min(4, (linkedTournament.players || []).length > 0 ? (linkedTournament.players || []).length : 4);
+        const gameSize = Math.min(MAX_PLAYERS, (linkedTournament.players || []).length > 0 ? (linkedTournament.players || []).length : MAX_PLAYERS);
         let names: string[] = [];
         const tournamentPlayers = linkedTournament.players || [];
         if (tournamentPlayers.length > 0) {
@@ -339,11 +340,11 @@ export default function NewGameForm() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0 text-sm text-primary/80 space-y-1">
-            <p>Players for this game: {gamePlayerCountForForm}. Target score: {linkedTournament.targetScore}.</p>
+            <p>Game players: {gamePlayerCountForForm}. Target score: {linkedTournament.targetScore}.</p>
             <p>
               {linkedTournament.playerParticipationMode === 'rotate_on_bust' && (linkedTournament.gameIds || []).length > 0 
-                ? "Players selected: Non-busted from last game prioritized, then new players." 
-                : "Players randomly selected."
+                ? "Players selected: Non-busted from last game prioritized, then new players, then busted from last game. " 
+                : "Players randomly selected. "
               } You can change the selection below.
             </p>
              <Button 
@@ -352,7 +353,7 @@ export default function NewGameForm() {
                 size="sm" 
                 className="mt-1 text-xs"
                 onClick={handleReshuffleTournamentPlayers}
-                disabled={(linkedTournament.players || []).length < gamePlayerCountForForm || (linkedTournament.players || []).length < 2 } 
+                disabled={((linkedTournament.players || []).length < gamePlayerCountForForm || (linkedTournament.players || []).length < 2) && linkedTournament.playerParticipationMode !== 'rotate_on_bust' } 
              >
                 <Shuffle className="mr-1 h-3 w-3" /> Re-shuffle Players
              </Button>
@@ -368,6 +369,15 @@ export default function NewGameForm() {
               if (!linkedTournament) {
                 const newNum = Number(value);
                 setNumPlayers(newNum);
+                 setPlayerNames(currentNames => {
+                    const newPlayerNamesArray = Array(newNum).fill('');
+                    for (let i = 0; i < newNum; i++) {
+                        if (i < currentNames.length) {
+                        newPlayerNamesArray[i] = currentNames[i];
+                        }
+                    }
+                    return newPlayerNamesArray;
+                });
               }
             }}
             disabled={!!linkedTournament} 
@@ -383,7 +393,7 @@ export default function NewGameForm() {
               ))}
             </SelectContent>
           </Select>
-          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count for this game is {gamePlayerCountForForm}.</p>}
+          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count for this game is fixed to {gamePlayerCountForForm} for the tournament.</p>}
         </div>
 
       <div className="space-y-4">
@@ -400,7 +410,7 @@ export default function NewGameForm() {
                   required
                   className="flex-grow"
                 />
-                {isClient && playerSourceForQuickAdd.length > 0 && (
+                 {isClient && playerSourceForQuickAdd.length > 0 && (
                   <Select onValueChange={(selectedName) => handleAddPlayerFromSource(index, selectedName)}>
                     <SelectTrigger className="w-[150px] text-xs">
                       <SelectValue placeholder="Quick Add" />
@@ -434,7 +444,7 @@ export default function NewGameForm() {
           className="w-full mt-1"
           disabled={!!linkedTournament} 
         />
-         {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Target score is set by the tournament.</p>}
+         {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Target score is set by the tournament to {linkedTournament.targetScore}.</p>}
       </div>
 
       <Button type="submit" className="w-full text-lg py-3 mt-4" size="lg" disabled={linkedTournament && !linkedTournament.isActive}>

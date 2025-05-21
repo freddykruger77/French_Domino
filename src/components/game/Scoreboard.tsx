@@ -152,23 +152,27 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     try {
       const tournament: Tournament = JSON.parse(tournamentString);
 
+      const T_i = finalGameData.players.length; // Table size for this game
+
       // Sort all players who participated in this game to determine their rank P_i
-      // Non-busted players first (sorted by score asc), then busted players (sorted by score asc)
       const gamePlayersSortedForRank = [...finalGameData.players].sort((a, b) => {
-        if (a.isBusted && !b.isBusted) return 1; // Non-busted come first
+        if (a.isBusted && !b.isBusted) return 1; 
         if (!a.isBusted && b.isBusted) return -1;
-        // If both busted or both not busted, sort by score (lower is better)
         return a.currentScore - b.currentScore;
       });
       
       tournament.players = tournament.players.map(tourneyPlayer => {
         const gamePlayerInstance = finalGameData.players.find(gp => gp.id === tourneyPlayer.id);
-        if (!gamePlayerInstance) return tourneyPlayer; // This tournament player didn't play in this game
+        if (!gamePlayerInstance) return tourneyPlayer; 
 
         const rankInGame = gamePlayersSortedForRank.findIndex(p => p.id === gamePlayerInstance.id);
-        const P_i_game = rankInGame !== -1 ? rankInGame + 1 : finalGameData.players.length +1; // Position in this specific game (1st, 2nd, etc.)
+        let P_i_game = rankInGame !== -1 ? rankInGame + 1 : T_i + 1; // Default to last if somehow not found
+        if (gamePlayerInstance.isBusted) {
+            P_i_game = T_i + 1;
+        }
 
-        const wonThisGame = P_i_game === 1 && !gamePlayerInstance.isBusted; 
+
+        const wonThisGame = !gamePlayerInstance.isBusted && P_i_game === 1; 
         const perfectGameThisGame = wonThisGame && gamePlayerInstance.currentScore === 0;
 
         return {
@@ -182,20 +186,41 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       });
 
       localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournament.id}`, JSON.stringify(tournament));
-      toast({ title: "Tournament Stats Updated", description: `Results from game ${finalGameData.gameNumberInTournament || finalGameData.id.substring(5,10)} applied to tournament.` });
+      
+      // Mark the game as processed for tournament stats
+      const gameKeyToMark = `${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${finalGameData.id}`;
+      const gameStringToMark = localStorage.getItem(gameKeyToMark);
+      if (gameStringToMark) {
+          try {
+              const parsedGameToMark = JSON.parse(gameStringToMark) as GameState;
+              const gameToSaveWithFlag = { ...parsedGameToMark, statsAppliedToTournament: true };
+              localStorage.setItem(gameKeyToMark, JSON.stringify(gameToSaveWithFlag));
+
+              // If this finalized game is the one currently on the scoreboard, update its state in Scoreboard.tsx
+              if (game && game.id === finalGameData.id) {
+                  setGame(gameToSaveWithFlag);
+              }
+              toast({ title: "Tournament Stats Updated", description: `Results from game ${finalGameData.gameNumberInTournament || finalGameData.id.substring(5,10)} applied to tournament.` });
+          } catch (e) {
+              console.error("Error parsing game state to mark stats as applied:", e);
+              toast({ title: "Error", description: "Could not mark game as processed for tournament.", variant: "destructive" });
+          }
+      } else {
+          console.error("Could not find game state in local storage to mark stats as applied:", finalGameData.id);
+          toast({ title: "Error", description: "Could not find game to mark as processed for tournament.", variant: "destructive" });
+      }
 
     } catch (e) {
       console.error("Error updating tournament stats:", e);
       toast({ title: "Tournament Error", description: "Failed to update tournament stats.", variant: "destructive" });
     }
-  }, [toast]);
+  }, [game, setGame, toast]);
 
 
   const checkAndEndGame = useCallback((currentGame: GameState, updatedPlayersList: PlayerInGame[]): GameState => {
     const gameToEnd = { ...currentGame, players: updatedPlayersList };
     
     const anyPlayerBustedThisAction = updatedPlayersList.some(p => p.isBusted);
-    // Game ends if any player busts.
     const gameShouldEndNow = gameToEnd.isActive && anyPlayerBustedThisAction;
 
     if (gameShouldEndNow) {
@@ -255,7 +280,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       setShowAddScoreDialog(false);
       setShowBoardPassDialog(false);
       setShowEditScoreDialog(false);
-      if (finalGameState.tournamentId) {
+      if (finalGameState.tournamentId && !finalGameState.statsAppliedToTournament) {
         handleFinalizeTournamentGame(finalGameState);
       }
     }
@@ -530,6 +555,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       currentRoundNumber: currentRoundAfterUndo,
       isActive: true, 
       winnerId: undefined, 
+      statsAppliedToTournament: false, // Reset flag as game results changed
     };
     
     const tempGameForCheck: GameState = {
@@ -597,6 +623,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       isActive: true, 
       winnerId: undefined, 
       currentRoundNumber: game.rounds.length + 1, 
+      statsAppliedToTournament: false, // Reset flag as game results changed
     };
     
     const tempGameForCheck: GameState = {
@@ -696,6 +723,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       aiGameRecords: newAiGameRecords,
       isActive: true, 
       winnerId: undefined, 
+      statsAppliedToTournament: false, // Reset flag as game results changed
     };
 
     const tempGameForCheck: GameState = {
@@ -773,9 +801,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButtonGlobal = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                     p.id !== boardPassIssuerId && // Cannot be self
+                                     p.id !== boardPassIssuerId && 
                                      !p.isBusted && 
-                                     p.currentScore < game.targetScore - PENALTY_POINTS // Can receive penalty without busting from it
+                                     p.currentScore < game.targetScore - PENALTY_POINTS 
                                    );
 
   const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
@@ -842,7 +870,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <XCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
             <div className="flex flex-col text-left">
               <span className="font-semibold">Game Over. {bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length ? `All players busted: ${bustedPlayerNamesOnGameOver}.` : `No winner declared (Busted: ${bustedPlayerNamesOnGameOver}).`}</span>
-               {bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length !== game.players.length && ` (Busted: ${bustedPlayerNamesOnGameOver})`}
             </div>
           </div>
         )}
@@ -852,7 +879,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           {game.players.map((player) => {
             const isThisPlayerShuffler = game.isActive && shufflerPlayerIds.length === 1 && shufflerPlayerIds[0] === player.id;
             const isThisPlayerTiedForShuffle = game.isActive && shufflerPlayerIds.length > 1 && shufflerPlayerIds.includes(player.id);
-            const isCurrentPlayerWinner = game.isActive ? false : winner?.id === player.id;
+            const isCurrentPlayerWinner = gameIsOver && winner?.id === player.id;
 
 
             return (
