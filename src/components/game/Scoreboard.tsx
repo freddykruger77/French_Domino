@@ -151,37 +151,33 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
     try {
       const tournament: Tournament = JSON.parse(tournamentString);
-      const T_i = finalGameData.players.length; // Table size for this game
 
-      const gamePlayersSorted = [...finalGameData.players].sort((a, b) => {
+      // Sort all players who participated in this game to determine their rank P_i
+      // Non-busted players first (sorted by score asc), then busted players (sorted by score asc)
+      const gamePlayersSortedForRank = [...finalGameData.players].sort((a, b) => {
         if (a.isBusted && !b.isBusted) return 1; // Non-busted come first
         if (!a.isBusted && b.isBusted) return -1;
-        return a.currentScore - b.currentScore; // Lower score is better
+        // If both busted or both not busted, sort by score (lower is better)
+        return a.currentScore - b.currentScore;
       });
       
-      const nonBustedCountInGame = finalGameData.players.filter(p => !p.isBusted).length;
-
       tournament.players = tournament.players.map(tourneyPlayer => {
         const gamePlayerInstance = finalGameData.players.find(gp => gp.id === tourneyPlayer.id);
         if (!gamePlayerInstance) return tourneyPlayer; // This tournament player didn't play in this game
 
-        let P_i: number; // Finishing position
-        if (gamePlayerInstance.isBusted) {
-          P_i = nonBustedCountInGame + 1; // All busted players share this position
-        } else {
-          P_i = gamePlayersSorted.findIndex(gpSorted => gpSorted.id === gamePlayerInstance.id) + 1;
-        }
+        const rankInGame = gamePlayersSortedForRank.findIndex(p => p.id === gamePlayerInstance.id);
+        const P_i_game = rankInGame !== -1 ? rankInGame + 1 : finalGameData.players.length +1; // Position in this specific game (1st, 2nd, etc.)
 
-        const wonThisGame = finalGameData.winnerId === gamePlayerInstance.id;
+        const wonThisGame = P_i_game === 1 && !gamePlayerInstance.isBusted; 
         const perfectGameThisGame = wonThisGame && gamePlayerInstance.currentScore === 0;
 
         return {
           ...tourneyPlayer,
-          gamesPlayed: tourneyPlayer.gamesPlayed + 1,
-          sumWeightedPlaces: tourneyPlayer.sumWeightedPlaces + (P_i / T_i),
-          wins: tourneyPlayer.wins + (wonThisGame ? 1 : 0),
-          busts: tourneyPlayer.busts + (gamePlayerInstance.isBusted ? 1 : 0),
-          perfectGames: tourneyPlayer.perfectGames + (perfectGameThisGame ? 1 : 0),
+          gamesPlayed: (tourneyPlayer.gamesPlayed || 0) + 1,
+          sumOfPositions: (tourneyPlayer.sumOfPositions || 0) + P_i_game,
+          wins: (tourneyPlayer.wins || 0) + (wonThisGame ? 1 : 0),
+          busts: (tourneyPlayer.busts || 0) + (gamePlayerInstance.isBusted ? 1 : 0),
+          perfectGames: (tourneyPlayer.perfectGames || 0) + (perfectGameThisGame ? 1 : 0),
         };
       });
 
@@ -198,8 +194,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const checkAndEndGame = useCallback((currentGame: GameState, updatedPlayersList: PlayerInGame[]): GameState => {
     const gameToEnd = { ...currentGame, players: updatedPlayersList };
     
-    const anyPlayerBusted = updatedPlayersList.some(p => p.isBusted);
-    const gameShouldEndNow = gameToEnd.isActive && anyPlayerBusted;
+    const anyPlayerBustedThisAction = updatedPlayersList.some(p => p.isBusted);
+    // Game ends if any player busts.
+    const gameShouldEndNow = gameToEnd.isActive && anyPlayerBustedThisAction;
 
     if (gameShouldEndNow) {
       gameToEnd.isActive = false;
@@ -218,7 +215,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         if (winnerPlayer.currentScore === 0) {
           winnerText += " A PERFECT GAME!";
         }
-        const isLoneSurvivor = nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length === updatedPlayersList.length - 1;
+        const isLoneSurvivor = nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length > 0;
         if (isLoneSurvivor) {
            winnerText += " A dominant performance, outlasting all opponents!";
         }
@@ -759,10 +756,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
   if (gameIsOver) {
     const nonBustedInGameOver = game.players.filter(p => !p.isBusted);
-    isLoneSurvivorWin = !!(winner && nonBustedInGameOver.length === 1 && bustedPlayersOnGameOver.length === game.players.length - 1);
+    isLoneSurvivorWin = !!(winner && nonBustedInGameOver.length === 1 && bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length - 1);
     
     if (game.players.length > 0) {
-      highestScoreInGame = Math.max(...game.players.map(p => p.currentScore).filter(s => s !== Infinity && s !== -Infinity));
+      highestScoreInGame = Math.max(...game.players.map(p => p.currentScore).filter(s => s !== Infinity && s !== -Infinity && !isNaN(s)));
       if (highestScoreInGame !== -Infinity && highestScoreInGame >=0) { 
         playersWithHighestScore = game.players.filter(p => p.currentScore === highestScoreInGame);
       }
@@ -776,9 +773,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButtonGlobal = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                     p.id !== boardPassIssuerId && 
+                                     p.id !== boardPassIssuerId && // Cannot be self
                                      !p.isBusted && 
-                                     p.currentScore < game.targetScore - PENALTY_POINTS 
+                                     p.currentScore < game.targetScore - PENALTY_POINTS // Can receive penalty without busting from it
                                    );
 
   const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
@@ -845,6 +842,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <XCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
             <div className="flex flex-col text-left">
               <span className="font-semibold">Game Over. {bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length ? `All players busted: ${bustedPlayerNamesOnGameOver}.` : `No winner declared (Busted: ${bustedPlayerNamesOnGameOver}).`}</span>
+               {bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length !== game.players.length && ` (Busted: ${bustedPlayerNamesOnGameOver})`}
             </div>
           </div>
         )}
@@ -888,13 +886,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               {isLoneSurvivorWin && winner && (
                  <p><strong>Lone Survivor:</strong> {winner.name} was the last player standing!</p>
               )}
-              {playersWithHighestScore.length > 0 && (
+              {playersWithHighestScore.length > 0 && highestScoreInGame > 0 && (
                 <p><strong>Highest Score This Game:</strong> {highestScoreInGame} (Achieved by: {playersWithHighestScore.map(p => p.name).join(', ')})</p>
               )}
               {playersOver150.length > 0 && (
                 <p><strong>Reached Over 150 Points:</strong> {playersOver150.map(p => `${p.name} (${p.currentScore})`).join(', ')}</p>
               )}
-              {(winner?.currentScore !== 0 && !isLoneSurvivorWin && playersWithHighestScore.length === 0 && playersOver150.length === 0 && !(winner && bustedPlayersOnGameOver.length === game.players.length -1)) && ( 
+              {(winner?.currentScore !== 0 && !isLoneSurvivorWin && (playersWithHighestScore.length === 0 || highestScoreInGame === 0) && playersOver150.length === 0 && !(winner && bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length -1)) && ( 
                 <p className="text-muted-foreground">No special milestones recorded for this game beyond the winner.</p>
               )}
                {(!winner && bustedPlayersOnGameOver.length > 0) && (
