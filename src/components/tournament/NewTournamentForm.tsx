@@ -44,29 +44,40 @@ export default function NewTournamentForm() {
 
   useEffect(() => {
     if (!isClient) return;
-    const initialNames = Array(numPlayers).fill('');
-    cachedPlayers
-      .sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime())
-      .slice(0, numPlayers)
-      .forEach((p, i) => {
-        if (i < numPlayers) {
-          initialNames[i] = p.name;
-        }
-      });
-    
+
     setPlayerNames(currentNames => {
-        const newNames = Array(numPlayers).fill('');
+        const newPlayerNamesArray = Array(numPlayers).fill('');
+        const sortedCachedPlayers = [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime());
+        
+        const assignedNames = new Set<string>();
+
+        // Step 1: Preserve existing names from currentNames, if they are valid for the new numPlayers
         for (let i = 0; i < numPlayers; i++) {
-            if (initialNames[i]) {
-                newNames[i] = initialNames[i];
-            } else if (i < currentNames.length && currentNames[i]) {
-                 newNames[i] = currentNames[i];
+            if (i < currentNames.length && currentNames[i] && currentNames[i].trim() !== '') {
+                newPlayerNamesArray[i] = currentNames[i];
+                assignedNames.add(currentNames[i]);
             }
         }
-        return newNames;
-    });
 
-  }, [cachedPlayers, numPlayers, isClient]);
+        // Step 2: Fill any remaining empty slots from sortedCachedPlayers, ensuring uniqueness
+        let cacheIndex = 0;
+        for (let i = 0; i < numPlayers; i++) {
+            if (newPlayerNamesArray[i] === '' || newPlayerNamesArray[i].trim() === '') { // If slot is empty
+                while(cacheIndex < sortedCachedPlayers.length) {
+                    const cachedName = sortedCachedPlayers[cacheIndex].name;
+                    if (!assignedNames.has(cachedName)) { // Check if this cached name is already used
+                        newPlayerNamesArray[i] = cachedName;
+                        assignedNames.add(cachedName); // Add to assigned names
+                        cacheIndex++;
+                        break; 
+                    }
+                    cacheIndex++; // Try next cached player
+                }
+            }
+        }
+        return newPlayerNamesArray;
+    });
+  }, [isClient, numPlayers, cachedPlayers, setPlayerNames]);
 
 
   const handleNumPlayersChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -74,17 +85,9 @@ export default function NewTournamentForm() {
     if (isNaN(newCount) || newCount < MIN_PLAYERS) {
       newCount = MIN_PLAYERS;
     }
+    // No upper limit enforced here for tournaments
     setNumPlayers(newCount);
-
-    setPlayerNames(currentNames => {
-      const newPlayerNamesArray = Array(newCount).fill('');
-      for (let i = 0; i < newCount; i++) {
-        if (i < currentNames.length) {
-          newPlayerNamesArray[i] = currentNames[i];
-        }
-      }
-      return newPlayerNamesArray;
-    });
+    // The useEffect above will handle adjusting playerNames array size and repopulating
   };
 
   const handlePlayerNameChange = (index: number, name: string) => {
@@ -110,6 +113,12 @@ export default function NewTournamentForm() {
       toast({ title: "Validation Error", description: "All players must have a name.", variant: "destructive" });
       return;
     }
+    const uniquePlayerNames = new Set(actualPlayerNames.map(name => name.trim().toLowerCase()));
+    if (uniquePlayerNames.size !== actualPlayerNames.filter(name => name.trim() !== '').length) {
+        toast({ title: "Validation Error", description: "Player names must be unique.", variant: "destructive"});
+        return;
+    }
+
 
     const currentTournamentPlayers: Player[] = actualPlayerNames.map((name, index) => ({
       id: `player-tourney-${Date.now()}-${index}`,
@@ -141,7 +150,14 @@ export default function NewTournamentForm() {
     };
 
     localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${newTournamentId}`, JSON.stringify(newTournament));
-    setActiveTournaments([...activeTournaments, newTournamentId]);
+    setActiveTournaments(prevActiveTournaments => {
+        const currentList = prevActiveTournaments || [];
+        if (!currentList.includes(newTournamentId)) {
+            return [...currentList, newTournamentId];
+        }
+        return currentList;
+    });
+
 
     const now = new Date().toISOString();
     const updatedCachedPlayers: CachedPlayer[] = [...cachedPlayers];
