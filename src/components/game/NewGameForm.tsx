@@ -53,13 +53,16 @@ export default function NewGameForm() {
         let names: string[] = [];
         const tournamentPlayers = tournament.players || [];
         if (tournamentPlayers.length > 0) {
-            if (tournamentPlayers.length >= gameSizeForThisGame) {
+            // Determine actual game size: MIN(4, number of players in tournament)
+            const actualGameSize = Math.min(MAX_PLAYERS, tournamentPlayers.length);
+             if (tournamentPlayers.length >= actualGameSize) {
                 const shuffledTournamentPlayers = shuffleArray(tournamentPlayers);
-                names = shuffledTournamentPlayers.slice(0, gameSizeForThisGame).map(p => p.name);
+                names = shuffledTournamentPlayers.slice(0, actualGameSize).map(p => p.name);
             } else { 
-                names = tournamentPlayers.map(p => p.name);
+                names = tournamentPlayers.map(p => p.name); // Should not happen if actualGameSize is capped by tournamentPlayers.length
             }
         }
+        // Ensure the names array matches the gameSizeForThisGame (which is actualGameSize here)
         while (names.length < gameSizeForThisGame) {
             names.push('');
         }
@@ -73,56 +76,57 @@ export default function NewGameForm() {
         if (lastGameString) {
             try {
                 const lastGameData = JSON.parse(lastGameString) as GameState;
-                const allTournamentPlayers = [...(tournament.players || [])];
+                const allTournamentPlayers = [...(tournament.players || [])]; // Array of Player objects
                 
                 const lastGamePlayerObjectsInTournament = lastGameData.players.filter(lgp => 
                     allTournamentPlayers.some(tp => tp.id === lgp.id)
                 );
-
                 const lastGamePlayerIdsInTournament = lastGamePlayerObjectsInTournament.map(p => p.id);
                 
                 const bustedPlayerIdsInLastGame = lastGamePlayerObjectsInTournament
                     .filter(p => p.isBusted)
                     .map(p => p.id);
 
-                let nonBustedFromLastGame = allTournamentPlayers.filter(p => lastGamePlayerIdsInTournament.includes(p.id) && !bustedPlayerIdsInLastGame.includes(p.id));
-                let freshPlayers = allTournamentPlayers.filter(p => !lastGamePlayerIdsInTournament.includes(p.id)); // Players who didn't play last game
-                let bustedFromLastGame = allTournamentPlayers.filter(p => bustedPlayerIdsInLastGame.includes(p.id));
+                // These are Player objects from the tournament roster
+                let nonBustedFromLastGamePool = allTournamentPlayers.filter(p => lastGamePlayerIdsInTournament.includes(p.id) && !bustedPlayerIdsInLastGame.includes(p.id));
+                // Players who didn't play last game - MAINTAIN ORIGINAL ROSTER ORDER for queue behavior
+                let playersWhoDidNotPlayLastGamePool = allTournamentPlayers.filter(p => !lastGamePlayerIdsInTournament.includes(p.id)); 
+                let bustedFromLastGamePool = allTournamentPlayers.filter(p => bustedPlayerIdsInLastGame.includes(p.id));
 
-                nonBustedFromLastGame = shuffleArray(nonBustedFromLastGame);
-                freshPlayers = shuffleArray(freshPlayers);
-                bustedFromLastGame = shuffleArray(bustedFromLastGame);
+                // Shuffle the pools that should be randomized before selection
+                nonBustedFromLastGamePool = shuffleArray(nonBustedFromLastGamePool);
+                // DO NOT shuffle playersWhoDidNotPlayLastGamePool to maintain queue order
+                bustedFromLastGamePool = shuffleArray(bustedFromLastGamePool);
 
                 const selectedPlayerObjects: Player[] = [];
                 
-                // Fill with non-busted from last game
-                while (selectedPlayerObjects.length < gameSizeForThisGame && nonBustedFromLastGame.length > 0) {
-                    selectedPlayerObjects.push(nonBustedFromLastGame.shift()!);
+                // Fill with non-busted from last game (PRIORITY 1 - Shuffled)
+                while (selectedPlayerObjects.length < gameSizeForThisGame && nonBustedFromLastGamePool.length > 0) {
+                    selectedPlayerObjects.push(nonBustedFromLastGamePool.shift()!);
                 }
-                // Fill with fresh players (did not play last game)
-                while (selectedPlayerObjects.length < gameSizeForThisGame && freshPlayers.length > 0) {
-                    selectedPlayerObjects.push(freshPlayers.shift()!);
+                // Fill with players who did not play last game (in roster order - PRIORITY 2)
+                while (selectedPlayerObjects.length < gameSizeForThisGame && playersWhoDidNotPlayLastGamePool.length > 0) {
+                    selectedPlayerObjects.push(playersWhoDidNotPlayLastGamePool.shift()!);
                 }
-                // Fill with busted from last game (if absolutely necessary)
-                while (selectedPlayerObjects.length < gameSizeForThisGame && bustedFromLastGame.length > 0) {
-                    selectedPlayerObjects.push(bustedFromLastGame.shift()!);
+                // Fill with busted from last game (shuffled - PRIORITY 3)
+                while (selectedPlayerObjects.length < gameSizeForThisGame && bustedFromLastGamePool.length > 0) {
+                    selectedPlayerObjects.push(bustedFromLastGamePool.shift()!);
                 }
                 
-                const currentSelectedIds = new Set(selectedPlayerObjects.map(p => p.id));
-                const allTournamentPlayersShuffled = shuffleArray(allTournamentPlayers); 
-                for (const p of allTournamentPlayersShuffled) {
-                    if (selectedPlayerObjects.length >= gameSizeForThisGame) break;
-                    if (!currentSelectedIds.has(p.id)) {
-                        selectedPlayerObjects.push(p);
-                        currentSelectedIds.add(p.id); 
-                    }
+                // Fallback: if not enough players selected (e.g. very small tournament), fill with any remaining tournament players not yet selected (shuffled)
+                const currentSelectedIdsSet = new Set(selectedPlayerObjects.map(p => p.id));
+                const remainingTournamentPlayersShuffled = shuffleArray(allTournamentPlayers.filter(p => !currentSelectedIdsSet.has(p.id)));
+                
+                while(selectedPlayerObjects.length < gameSizeForThisGame && remainingTournamentPlayersShuffled.length > 0) {
+                    selectedPlayerObjects.push(remainingTournamentPlayersShuffled.shift()!);
                 }
 
                 selectedPlayerNames = selectedPlayerObjects.map(p => p.name);
+                // Ensure the array has the correct game size, padding with empty strings if necessary
                 while (selectedPlayerNames.length < gameSizeForThisGame) {
                     selectedPlayerNames.push('');
                 }
-                selectedPlayerNames = selectedPlayerNames.slice(0, gameSizeForThisGame);
+                selectedPlayerNames = selectedPlayerNames.slice(0, gameSizeForThisGame); 
 
             } catch (e) {
                 console.error("Failed to process last game data for rotation:", e);
@@ -130,14 +134,13 @@ export default function NewGameForm() {
                 selectedPlayerNames = performStandardRandomSelection();
             }
         } else { 
-             // No last game string found, maybe first game after setting mode or error.
             selectedPlayerNames = performStandardRandomSelection();
         }
     } else { 
         selectedPlayerNames = performStandardRandomSelection();
     }
     setPlayerNames(selectedPlayerNames);
-}, [setPlayerNames, toast]);
+  }, [setPlayerNames, toast]);
 
 
   useEffect(() => {
@@ -148,10 +151,10 @@ export default function NewGameForm() {
           const tournamentData = JSON.parse(tournamentString) as Tournament;
           setLinkedTournament(tournamentData);
           
-          const gameSizeForThisGame = Math.min(MAX_PLAYERS, (tournamentData.players || []).length > 0 ? (tournamentData.players || []).length : MAX_PLAYERS);
-          setNumPlayers(gameSizeForThisGame); 
+          const gameSize = (tournamentData.players.length >= MAX_PLAYERS) ? MAX_PLAYERS : tournamentData.players.length;
+          setNumPlayers(gameSize); 
           setTargetScore(tournamentData.targetScore);
-          initializePlayerNamesForTournament(tournamentData, gameSizeForThisGame);
+          initializePlayerNamesForTournament(tournamentData, gameSize);
         } catch (e) {
           console.error("Failed to parse tournament data for prefill:", e);
           toast({ title: "Error", description: "Could not load tournament data for prefill.", variant: "destructive" });
@@ -202,19 +205,16 @@ export default function NewGameForm() {
     let currentPlayersData: PlayerInGame[];
 
     if (linkedTournament) {
-      // Ensure all selected names for the game exist in the tournament roster to get their correct IDs
       const gamePlayersFromTournamentRoster = currentActivePlayerNames.map((name, index) => {
         const tournamentPlayer = linkedTournament.players.find(p => p.name === name.trim());
         if (!tournamentPlayer) {
-            // This case should be rare if UI properly filters quick-adds for tournament players
-            // Or if user manually types a non-tournament player
-            toast({ title: "Player Error", description: `Player "${name}" not found in tournament roster. Using temporary ID for this game.`, variant: "destructive"});
+            toast({ title: "Player Error", description: `Player "${name}" not found in tournament roster. Using temporary ID for this game. This might affect tournament stats if the name doesn't exactly match.`, variant: "destructive", duration: 7000});
             return {
-                id: `player-temp-${Date.now()}-${index}`, // Fallback ID
+                id: `player-temp-${Date.now()}-${index}`, 
                 name: name.trim(),
             };
         }
-        return tournamentPlayer; // This is of type Player (or TournamentPlayerStats which extends Player)
+        return tournamentPlayer; 
       });
       
       currentPlayersData = gamePlayersFromTournamentRoster.map(player => ({
@@ -310,7 +310,7 @@ export default function NewGameForm() {
 
   const handleReshuffleTournamentPlayers = () => {
     if (linkedTournament) {
-        const gameSize = Math.min(MAX_PLAYERS, (linkedTournament.players || []).length > 0 ? (linkedTournament.players || []).length : MAX_PLAYERS);
+        const gameSize = (linkedTournament.players.length >= MAX_PLAYERS) ? MAX_PLAYERS : linkedTournament.players.length;
         let names: string[] = [];
         const tournamentPlayers = linkedTournament.players || [];
         if (tournamentPlayers.length > 0) {
@@ -343,7 +343,7 @@ export default function NewGameForm() {
             <p>Game players: {gamePlayerCountForForm}. Target score: {linkedTournament.targetScore}.</p>
             <p>
               {linkedTournament.playerParticipationMode === 'rotate_on_bust' && (linkedTournament.gameIds || []).length > 0 
-                ? "Players selected: Non-busted from last game prioritized, then new players, then busted from last game. " 
+                ? "Players selected: Non-busted from last game first, then players who didn't play (in order), then busted players. " 
                 : "Players randomly selected. "
               } You can change the selection below.
             </p>
@@ -353,7 +353,8 @@ export default function NewGameForm() {
                 size="sm" 
                 className="mt-1 text-xs"
                 onClick={handleReshuffleTournamentPlayers}
-                disabled={((linkedTournament.players || []).length < gamePlayerCountForForm || (linkedTournament.players || []).length < 2) && linkedTournament.playerParticipationMode !== 'rotate_on_bust' } 
+                // Disable reshuffle if not enough distinct players for the game size and not in rotation mode (where selection is more deterministic)
+                disabled={ ((linkedTournament.players || []).length < gamePlayerCountForForm && linkedTournament.playerParticipationMode !== 'rotate_on_bust') || (linkedTournament.players || []).length < 2 } 
              >
                 <Shuffle className="mr-1 h-3 w-3" /> Re-shuffle Players
              </Button>
@@ -393,7 +394,7 @@ export default function NewGameForm() {
               ))}
             </SelectContent>
           </Select>
-          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count for this game is fixed to {gamePlayerCountForForm} for the tournament.</p>}
+          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count for this game is fixed to {gamePlayerCountForForm} (max {MAX_PLAYERS}) for the tournament.</p>}
         </div>
 
       <div className="space-y-4">
@@ -458,5 +459,4 @@ export default function NewGameForm() {
     </form>
   );
 }
-
     
