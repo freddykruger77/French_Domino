@@ -1,15 +1,26 @@
+
 import NewGameForm from "@/components/game/NewGameForm";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-export default function NewGamePage() {
+interface NewGamePageProps {
+  searchParams?: {
+    tournamentId?: string;
+  };
+}
+
+export default function NewGamePage({ searchParams }: NewGamePageProps) {
+  const tournamentId = searchParams?.tournamentId;
+  const backHref = tournamentId ? `/tournaments/${tournamentId}` : "/";
+  const backText = tournamentId ? "Back to Tournament" : "Back to Home";
+
   return (
     <div className="max-w-2xl mx-auto py-8">
-      <Link href="/" passHref>
+      <Link href={backHref} passHref>
         <Button variant="outline" className="mb-6">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
+          <ArrowLeft className="mr-2 h-4 w-4" /> {backText}
         </Button>
       </Link>
       <Card className="shadow-lg">
