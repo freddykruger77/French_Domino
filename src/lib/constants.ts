@@ -1,5 +1,4 @@
 
-      
 export const DEFAULT_TARGET_SCORE = 100;
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 4; // Max players for a single game, not tournament
@@ -19,5 +18,5 @@ export const DEFAULT_WIN_BONUS_K = 0.25; // e.g., -0.25 for each win
 export const DEFAULT_BUST_PENALTY_K = 0.50; // e.g., +0.50 for each bust
 export const DEFAULT_PG_KICKER_K = 0.05; // e.g., -0.05 for each perfect game win
 
-
-    
+// Tournament Eligibility
+export const DEFAULT_MIN_GAMES_PCT = 0.10; // Default minimum games played percentage to qualify for ranking

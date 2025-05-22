@@ -1,5 +1,4 @@
 
-      
 export interface Player {
   id: string;
   name: string;
@@ -52,15 +51,19 @@ export interface TournamentPlayerStats extends Player {
   wins: number; // W
   busts: number; // B
   perfectGames: number; // PG
-  sumOfPositions: number; // Sum of Pᵢ (raw finishing place in each game, where bust = TableSize + 1)
+  sumOfPositions: number; // Sum of Pᵢ (raw finishing place in each game)
 
   // Calculated scores for leaderboard display (Adjusted Average Position method)
   displaySumOfPositions?: number;
-  displayWinBonusApplied?: number; 
-  displayBustPenaltyApplied?: number; 
-  displayPgBonusApplied?: number; 
-  displayAdjustedSumOfPositions?: number; 
+  displayWinBonusApplied?: number;
+  displayBustPenaltyApplied?: number;
+  displayPgBonusApplied?: number;
+  displayAdjustedSumOfPositions?: number;
   finalTournamentScore?: number; // This is the "Average Adjusted Position"
+
+  // Eligibility for ranking
+  isEligibleForRanking?: boolean;
+  gamesNeededToQualify?: number;
 }
 
 export type PlayerParticipationMode = 'fixed_roster' | 'rotate_on_bust';
@@ -74,15 +77,16 @@ export interface Tournament {
   playerParticipationMode: PlayerParticipationMode;
   createdAt: string;
   isActive: boolean; // Can be manually set to false to "archive" or complete a tournament
-  
+
   // K-factors for "Adjusted Average Position" scoring
-  winBonusK: number; 
-  bustPenaltyK: number; 
-  pgKickerK: number; 
+  winBonusK: number;
+  bustPenaltyK: number;
+  pgKickerK: number;
+
+  // Eligibility gate
+  minGamesPct: number; // Minimum games played percentage to qualify for ranking (e.g., 0.10 for 10%)
 }
 
 export interface CachedPlayer extends Player {
   lastUsed: string; // ISO date string
 }
-
-    

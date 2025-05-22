@@ -1,5 +1,4 @@
 
-      
 "use client";
 
 import { useState, useEffect, type FormEvent } from 'react';
@@ -9,25 +8,25 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
-import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, LOCAL_STORAGE_KEYS, DEFAULT_WIN_BONUS_K, DEFAULT_BUST_PENALTY_K, DEFAULT_PG_KICKER_K } from '@/lib/constants';
+import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, LOCAL_STORAGE_KEYS, DEFAULT_WIN_BONUS_K, DEFAULT_BUST_PENALTY_K, DEFAULT_PG_KICKER_K, DEFAULT_MIN_GAMES_PCT } from '@/lib/constants';
 import type { Tournament, TournamentPlayerStats, CachedPlayer, Player, PlayerParticipationMode } from '@/lib/types';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import { PlusCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const MAX_CACHED_PLAYERS = 10; 
-const INITIAL_DEFAULT_PLAYERS = 4; 
+const MAX_CACHED_PLAYERS = 10;
+const INITIAL_DEFAULT_PLAYERS = 4;
 
 export default function NewTournamentForm() {
   const router = useRouter();
   const { toast } = useToast();
-  
+
   const [tournamentName, setTournamentName] = useState<string>('');
   const [numPlayers, setNumPlayers] = useState<number>(INITIAL_DEFAULT_PLAYERS);
   const [playerNames, setPlayerNames] = useState<string[]>(Array(INITIAL_DEFAULT_PLAYERS).fill(''));
   const [targetScore, setTargetScore] = useState<number>(DEFAULT_TARGET_SCORE);
   const [playerParticipationMode, setPlayerParticipationMode] = useState<PlayerParticipationMode>('rotate_on_bust');
-  
+
   const [cachedPlayers, setCachedPlayers] = useLocalStorage<CachedPlayer[]>(LOCAL_STORAGE_KEYS.CACHED_PLAYERS, []);
   const [activeTournaments, setActiveTournaments] = useLocalStorage<string[]>(LOCAL_STORAGE_KEYS.ACTIVE_TOURNAMENTS_LIST, []);
   const [isClient, setIsClient] = useState(false);
@@ -36,6 +35,7 @@ export default function NewTournamentForm() {
   const [winBonusK, setWinBonusK] = useState<number>(DEFAULT_WIN_BONUS_K);
   const [bustPenaltyK, setBustPenaltyK] = useState<number>(DEFAULT_BUST_PENALTY_K);
   const [pgKickerK, setPgKickerK] = useState<number>(DEFAULT_PG_KICKER_K);
+  const [minGamesPct, setMinGamesPct] = useState<number>(DEFAULT_MIN_GAMES_PCT);
 
 
   useEffect(() => {
@@ -45,37 +45,36 @@ export default function NewTournamentForm() {
   useEffect(() => {
     if (!isClient) return;
 
-    setPlayerNames(currentNames => {
-        const newPlayerNamesArray = Array(numPlayers).fill('');
-        const sortedCachedPlayers = [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime());
-        
-        const assignedNames = new Set<string>();
+    setPlayerNames(currentPNs => {
+      const newPlayerNamesArray = Array(numPlayers).fill('');
+      const sortedCachedPlayers = Array.isArray(cachedPlayers) ? [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()) : [];
+      const assignedNames = new Set<string>();
 
-        // Step 1: Preserve existing names from currentNames, if they are valid for the new numPlayers
-        for (let i = 0; i < numPlayers; i++) {
-            if (i < currentNames.length && currentNames[i] && currentNames[i].trim() !== '') {
-                newPlayerNamesArray[i] = currentNames[i];
-                assignedNames.add(currentNames[i]);
-            }
-        }
-
-        // Step 2: Fill any remaining empty slots from sortedCachedPlayers, ensuring uniqueness
-        let cacheIndex = 0;
-        for (let i = 0; i < numPlayers; i++) {
-            if (newPlayerNamesArray[i] === '' || newPlayerNamesArray[i].trim() === '') { // If slot is empty
-                while(cacheIndex < sortedCachedPlayers.length) {
-                    const cachedName = sortedCachedPlayers[cacheIndex].name;
-                    if (!assignedNames.has(cachedName)) { // Check if this cached name is already used
-                        newPlayerNamesArray[i] = cachedName;
-                        assignedNames.add(cachedName); // Add to assigned names
-                        cacheIndex++;
-                        break; 
-                    }
-                    cacheIndex++; // Try next cached player
-                }
-            }
-        }
-        return newPlayerNamesArray;
+      // Step 1: Preserve existing, non-empty names from currentPNs if their index is within new numPlayers range
+      for (let i = 0; i < numPlayers; i++) {
+          if (i < currentPNs.length && currentPNs[i] && currentPNs[i].trim() !== '') {
+              newPlayerNamesArray[i] = currentPNs[i];
+              assignedNames.add(currentPNs[i].trim().toLowerCase());
+          }
+      }
+      
+      // Step 2: Fill any remaining empty slots from sortedCachedPlayers, ensuring uniqueness
+      let cacheIndex = 0;
+      for (let i = 0; i < numPlayers; i++) {
+          if (newPlayerNamesArray[i] === '' || newPlayerNamesArray[i].trim() === '') { // If slot is empty
+              while(cacheIndex < sortedCachedPlayers.length) {
+                  const cachedName = sortedCachedPlayers[cacheIndex].name;
+                  if (!assignedNames.has(cachedName.toLowerCase())) { // Check if this cached name is already used
+                      newPlayerNamesArray[i] = cachedName;
+                      assignedNames.add(cachedName.toLowerCase()); // Add to assigned names
+                      cacheIndex++;
+                      break; 
+                  }
+                  cacheIndex++; // Try next cached player
+              }
+          }
+      }
+      return newPlayerNamesArray;
     });
   }, [isClient, numPlayers, cachedPlayers, setPlayerNames]);
 
@@ -87,7 +86,6 @@ export default function NewTournamentForm() {
     }
     // No upper limit enforced here for tournaments
     setNumPlayers(newCount);
-    // The useEffect above will handle adjusting playerNames array size and repopulating
   };
 
   const handlePlayerNameChange = (index: number, name: string) => {
@@ -99,7 +97,7 @@ export default function NewTournamentForm() {
   const handleAddPlayerFromCache = (index: number, playerName: string) => {
     handlePlayerNameChange(index, playerName);
   };
-  
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
 
@@ -115,10 +113,9 @@ export default function NewTournamentForm() {
     }
     const uniquePlayerNames = new Set(actualPlayerNames.map(name => name.trim().toLowerCase()));
     if (uniquePlayerNames.size !== actualPlayerNames.filter(name => name.trim() !== '').length) {
-        toast({ title: "Validation Error", description: "Player names must be unique.", variant: "destructive"});
+        toast({ title: "Validation Error", description: "Player names must be unique for this tournament.", variant: "destructive"});
         return;
     }
-
 
     const currentTournamentPlayers: Player[] = actualPlayerNames.map((name, index) => ({
       id: `player-tourney-${Date.now()}-${index}`,
@@ -133,7 +130,7 @@ export default function NewTournamentForm() {
       perfectGames: 0,
       sumOfPositions: 0,
     }));
-    
+
     const newTournamentId = `tournament-${Date.now()}`;
     const newTournament: Tournament = {
       id: newTournamentId,
@@ -147,6 +144,7 @@ export default function NewTournamentForm() {
       winBonusK: winBonusK,
       bustPenaltyK: bustPenaltyK,
       pgKickerK: pgKickerK,
+      minGamesPct: minGamesPct,
     };
 
     localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${newTournamentId}`, JSON.stringify(newTournament));
@@ -160,7 +158,7 @@ export default function NewTournamentForm() {
 
 
     const now = new Date().toISOString();
-    const updatedCachedPlayers: CachedPlayer[] = [...cachedPlayers];
+    const updatedCachedPlayers: CachedPlayer[] = Array.isArray(cachedPlayers) ? [...cachedPlayers] : [];
     currentTournamentPlayers.forEach(p => {
       const existingCachedPlayerIndex = updatedCachedPlayers.findIndex(cp => cp.name.toLowerCase() === p.name.toLowerCase());
       if (existingCachedPlayerIndex !== -1) {
@@ -169,12 +167,12 @@ export default function NewTournamentForm() {
         updatedCachedPlayers.push({ id: p.id, name: p.name, lastUsed: now });
       }
     });
-    setCachedPlayers(
-      updatedCachedPlayers
+
+    const sortedNewCachedPlayers = updatedCachedPlayers
         .sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime())
-        .slice(0, MAX_CACHED_PLAYERS)
-    );
-    
+        .slice(0, MAX_CACHED_PLAYERS);
+    setCachedPlayers(Array.isArray(sortedNewCachedPlayers) ? sortedNewCachedPlayers : []);
+
     toast({ title: "Tournament Created!", description: `Tournament "${newTournament.name}" started successfully.` });
     router.push(`/tournaments`);
   };
@@ -195,7 +193,7 @@ export default function NewTournamentForm() {
       </div>
 
       <div>
-        <Label htmlFor="numPlayers" className="text-base">Number of Players</Label>
+        <Label htmlFor="numPlayers" className="text-base">Number of Players in Roster</Label>
         <Input
           id="numPlayers"
           type="number"
@@ -221,14 +219,20 @@ export default function NewTournamentForm() {
                 required
                 className="flex-grow"
               />
-              {isClient && cachedPlayers.length > 0 && (
+              {isClient && (Array.isArray(cachedPlayers) && cachedPlayers.length > 0) && (
                 <Select onValueChange={(cachedName) => handleAddPlayerFromCache(index, cachedName)}>
                   <SelectTrigger className="w-[150px] text-xs">
                     <SelectValue placeholder="Quick Add" />
                   </SelectTrigger>
                   <SelectContent>
                     {cachedPlayers
-                      .filter(cp => !playerNames.slice(0, numPlayers).includes(cp.name) || playerNames[index] === cp.name)
+                      .filter(cp => {
+                        const otherPlayerNamesLower = playerNames
+                            .slice(0, numPlayers)
+                            .filter((_, i) => i !== index) // Exclude current field's name
+                            .map(name => name.toLowerCase());
+                        return !otherPlayerNamesLower.includes(cp.name.toLowerCase());
+                      })
                       .map(cp => (
                       <SelectItem key={cp.id} value={cp.name} className="text-xs">
                         {cp.name}
@@ -241,7 +245,7 @@ export default function NewTournamentForm() {
           </Card>
         ))}
       </div>
-      
+
       <div>
         <Label htmlFor="targetScore" className="text-base">Target Score for Games (Bust Score)</Label>
         <Input
@@ -274,7 +278,7 @@ export default function NewTournamentForm() {
       </div>
 
       <Card className="p-4 space-y-3 bg-muted/30">
-        <h4 className="text-md font-semibold text-primary">Tournament Scoring Factors</h4>
+        <h4 className="text-md font-semibold text-primary">Tournament Scoring & Ranking Factors</h4>
         <p className="text-xs text-muted-foreground">
           These values determine how wins, busts, and perfect games affect the "Adjusted Average Position" score. Lower final scores are better.
         </p>
@@ -311,6 +315,22 @@ export default function NewTournamentForm() {
             className="w-full mt-1"
           />
         </div>
+         <div>
+          <Label htmlFor="minGamesPct" className="text-sm">Min. Games % for Ranking Eligibility</Label>
+          <Input
+            id="minGamesPct"
+            type="number"
+            step="0.01"
+            min="0"
+            max="1"
+            value={minGamesPct}
+            onChange={(e) => setMinGamesPct(parseFloat(e.target.value))}
+            className="w-full mt-1"
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Players must play at least this percentage of total tournament games to be ranked (e.g., 0.10 for 10%).
+          </p>
+        </div>
       </Card>
 
 
@@ -320,5 +340,3 @@ export default function NewTournamentForm() {
     </form>
   );
 }
-
-    

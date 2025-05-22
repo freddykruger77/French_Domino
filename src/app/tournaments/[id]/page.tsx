@@ -1,16 +1,17 @@
 
-      
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trophy, Cog, BarChart3, Info, PlusCircle, Gamepad2, List } from "lucide-react";
+import { ArrowLeft, Trophy, Cog, BarChart3, Info, PlusCircle, Gamepad2, List, ShieldCheck, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, useMemo, use } from "react";
 import type { Tournament, TournamentPlayerStats, GameState } from '@/lib/types';
-import { LOCAL_STORAGE_KEYS, DEFAULT_TARGET_SCORE, DEFAULT_WIN_BONUS_K, DEFAULT_BUST_PENALTY_K, DEFAULT_PG_KICKER_K } from '@/lib/constants';
+import { LOCAL_STORAGE_KEYS, DEFAULT_TARGET_SCORE, DEFAULT_WIN_BONUS_K, DEFAULT_BUST_PENALTY_K, DEFAULT_PG_KICKER_K, DEFAULT_MIN_GAMES_PCT } from '@/lib/constants';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface TournamentDetailsPageProps {
   params: {
@@ -23,29 +24,37 @@ function calculatePlayerTournamentScore(
   player: TournamentPlayerStats,
   tournamentWinBonusK: number,
   tournamentBustPenaltyK: number,
-  tournamentPgKickerK: number
+  tournamentPgKickerK: number,
+  minGamesPctForRanking: number,
+  totalTournamentGames: number,
 ): TournamentPlayerStats {
-  if (!player.gamesPlayed || player.gamesPlayed === 0) {
+  const G = player.gamesPlayed ?? 0;
+  const sumP = player.sumOfPositions ?? 0;
+  const W = player.wins ?? 0;
+  const B = player.busts ?? 0;
+  const PG = player.perfectGames ?? 0;
+
+  const quota = Math.ceil(minGamesPctForRanking * totalTournamentGames);
+  const isEligibleForRanking = G >= quota;
+  const gamesNeededToQualify = Math.max(0, quota - G);
+
+  if (G === 0) {
     return {
       ...player,
-      sumOfPositions: player.sumOfPositions ?? 0,
-      wins: player.wins ?? 0,
-      busts: player.busts ?? 0,
-      perfectGames: player.perfectGames ?? 0,
+      sumOfPositions: sumP,
+      wins: W,
+      busts: B,
+      perfectGames: PG,
       displaySumOfPositions: 0,
       displayWinBonusApplied: 0,
       displayBustPenaltyApplied: 0,
       displayPgBonusApplied: 0,
       displayAdjustedSumOfPositions: 0,
       finalTournamentScore: Infinity, // Ensures players with 0 games are last
+      isEligibleForRanking: totalTournamentGames > 0 ? G >= quota : true, // Eligible if no games yet
+      gamesNeededToQualify: totalTournamentGames > 0 ? Math.max(0, quota - G) : 0,
     };
   }
-
-  const G = player.gamesPlayed;
-  const sumP = player.sumOfPositions ?? 0;
-  const W = player.wins ?? 0;
-  const B = player.busts ?? 0;
-  const PG = player.perfectGames ?? 0;
 
   const winBonusApplied = -(W * tournamentWinBonusK);
   const bustPenaltyApplied = B * tournamentBustPenaltyK;
@@ -56,7 +65,7 @@ function calculatePlayerTournamentScore(
 
   return {
     ...player,
-    sumOfPositions: sumP, // Ensure these are numbers on the returned object too
+    sumOfPositions: sumP,
     wins: W,
     busts: B,
     perfectGames: PG,
@@ -66,6 +75,8 @@ function calculatePlayerTournamentScore(
     displayPgBonusApplied: parseFloat(pgBonusApplied.toFixed(3)),
     displayAdjustedSumOfPositions: parseFloat(adjustedSumOfPositions.toFixed(3)),
     finalTournamentScore: parseFloat(finalScore.toFixed(3)),
+    isEligibleForRanking,
+    gamesNeededToQualify,
   };
 }
 
@@ -84,7 +95,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
       if (tournamentString) {
         try {
           const parsedTournament = JSON.parse(tournamentString) as Partial<Tournament>;
-          
+
           let processedName = 'Unnamed Tournament';
           if (parsedTournament.name && typeof parsedTournament.name === 'string') {
               const trimmedName = parsedTournament.name.trim();
@@ -92,12 +103,12 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                   processedName = trimmedName;
               }
           }
-          
+
           const completeTournament: Tournament = {
             id: parsedTournament.id || tournamentId,
             name: processedName,
             players: (parsedTournament.players ?? []).map(p => ({
-                ...p,
+                ...(p as TournamentPlayerStats), // Cast to assure TS all fields might be there
                 gamesPlayed: p.gamesPlayed ?? 0,
                 wins: p.wins ?? 0,
                 busts: p.busts ?? 0,
@@ -105,13 +116,14 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                 sumOfPositions: p.sumOfPositions ?? 0,
             })),
             targetScore: parsedTournament.targetScore ?? DEFAULT_TARGET_SCORE,
-            playerParticipationMode: parsedTournament.playerParticipationMode ?? 'fixed_roster',
+            playerParticipationMode: parsedTournament.playerParticipationMode ?? 'rotate_on_bust',
             gameIds: parsedTournament.gameIds ?? [],
             isActive: parsedTournament.isActive ?? true,
             createdAt: parsedTournament.createdAt ?? new Date().toISOString(),
             winBonusK: parsedTournament.winBonusK ?? DEFAULT_WIN_BONUS_K,
             bustPenaltyK: parsedTournament.bustPenaltyK ?? DEFAULT_BUST_PENALTY_K,
             pgKickerK: parsedTournament.pgKickerK ?? DEFAULT_PG_KICKER_K,
+            minGamesPct: parsedTournament.minGamesPct ?? DEFAULT_MIN_GAMES_PCT,
           };
           setTournament(completeTournament);
 
@@ -140,19 +152,27 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
 
   const sortedPlayersWithScores = useMemo(() => {
     if (!tournament || !tournament.players) return [];
+    const totalTournamentGames = tournament.gameIds?.length || 0;
 
     const playersWithCalculatedScores = tournament.players.map(player =>
       calculatePlayerTournamentScore(
         player,
         tournament.winBonusK,
         tournament.bustPenaltyK,
-        tournament.pgKickerK
+        tournament.pgKickerK,
+        tournament.minGamesPct,
+        totalTournamentGames
       )
     );
 
     return playersWithCalculatedScores.sort((a, b) => {
+      // Sort by eligibility first (eligible players come before provisional)
+      if (a.isEligibleForRanking && !b.isEligibleForRanking) return -1;
+      if (!a.isEligibleForRanking && b.isEligibleForRanking) return 1;
+
+      // If both have same eligibility, or both are eligible, then sort by score
       if (a.finalTournamentScore === undefined && b.finalTournamentScore === undefined) return 0;
-      if (a.finalTournamentScore === undefined) return 1; 
+      if (a.finalTournamentScore === undefined) return 1;
       if (b.finalTournamentScore === undefined) return -1;
 
       if (a.finalTournamentScore !== b.finalTournamentScore) {
@@ -167,7 +187,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
       // Tie-breaker 2: More wins is better
       const winsA = a.wins ?? 0;
       const winsB = b.wins ?? 0;
-      return winsB - winsA; 
+      return winsB - winsA;
     });
   }, [tournament]);
 
@@ -177,6 +197,8 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
     if (mode === 'rotate_on_bust') return 'Rotate Busted Players';
     return 'N/A';
   }
+
+  let rankCounter = 0;
 
   return (
     <div className="max-w-6xl mx-auto py-8">
@@ -196,6 +218,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
               <p>ID: {tournament.id.substring(0,11)}...</p>
               <p>Game Target Score: {tournament.targetScore}</p>
               <p className="flex items-center gap-1"><Cog className="h-4 w-4 text-muted-foreground"/> Participation: {participationModeText(tournament.playerParticipationMode)}</p>
+              <p className="flex items-center gap-1"><ShieldCheck className="h-4 w-4 text-muted-foreground"/> Min. Games for Ranking: {((tournament.minGamesPct ?? 0) * 100).toFixed(0)}% of total games ({Math.ceil((tournament.minGamesPct ?? 0) * (tournament.gameIds?.length || 0))} game(s) currently)</p>
                <p className="text-xs text-muted-foreground">
                 Scoring: (Sum of Places - (Wins * {(tournament.winBonusK ?? 0).toFixed(2)}) + (Busts * {(tournament.bustPenaltyK ?? 0).toFixed(2)}) - (PGs * {(tournament.pgKickerK ?? 0).toFixed(2)})) / Games Played. Lower is better.
               </p>
@@ -214,7 +237,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
               <div className="mb-6">
                 <Link href={`/new-game?tournamentId=${tournament.id}`} passHref>
                   <Button variant="default" size="lg" className="w-full md:w-auto" disabled={!tournament.isActive}>
-                    <PlusCircle className="mr-2 h-5 w-5" /> Start New Tournament Game
+                    <PlusCircle className="mr-2 h-5 w-5" /> Start New Tournament Game ({ (tournament.gameIds?.length || 0) + 1})
                   </Button>
                 </Link>
                  {!tournament.isActive && <p className="text-sm text-muted-foreground mt-2">This tournament is marked as inactive. No new games can be started.</p>}
@@ -225,7 +248,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                 {sortedPlayersWithScores.length > 0 ? (
                   <ScrollArea className="max-h-[600px] w-full">
                     <Table>
-                      <TableCaption>Lower final "Avg. Adj. Pos." scores are better. Tie-breakers: 1. Fewer Busts, 2. More Wins.</TableCaption>
+                      <TableCaption>Lower final "Avg. Adj. Pos." scores are better. Tie-breakers: 1. Fewer Busts, 2. More Wins. Provisional players need more games to qualify for rank.</TableCaption>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[50px]">Rank</TableHead>
@@ -243,22 +266,51 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {sortedPlayersWithScores.map((player, index) => (
-                          <TableRow key={player.id} className={(player.gamesPlayed ?? 0) === 0 ? "opacity-60" : ""}>
-                            <TableCell className="font-medium text-center">{(player.gamesPlayed ?? 0) > 0 ? index + 1 : "N/A"}</TableCell>
-                            <TableCell>{player.name}</TableCell>
-                            <TableCell className="text-center">{player.gamesPlayed ?? 0}</TableCell>
-                            <TableCell className="text-center">{player.wins ?? 0}</TableCell>
-                            <TableCell className="text-center">{player.busts ?? 0}</TableCell>
-                            <TableCell className="text-center">{player.perfectGames ?? 0}</TableCell>
-                            <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displaySumOfPositions ?? 0).toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayWinBonusApplied ?? 0).toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayBustPenaltyApplied ?? 0).toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayPgBonusApplied ?? 0).toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayAdjustedSumOfPositions ?? 0).toFixed(3) : '-'}</TableCell>
-                            <TableCell className="text-center font-bold text-accent">{(player.gamesPlayed ?? 0) > 0 ? (player.finalTournamentScore ?? Infinity).toFixed(3) : 'N/A'}</TableCell>
-                          </TableRow>
-                        ))}
+                        {sortedPlayersWithScores.map((player) => {
+                          if (player.isEligibleForRanking && (player.gamesPlayed ?? 0) > 0) {
+                            rankCounter++;
+                          }
+                          return (
+                            <TableRow key={player.id} className={cn(
+                                (player.gamesPlayed ?? 0) === 0 ? "opacity-60" : "",
+                                !player.isEligibleForRanking && (player.gamesPlayed ?? 0) > 0 ? "bg-muted/40 hover:bg-muted/50 opacity-80" : ""
+                            )}>
+                              <TableCell className="font-medium text-center">
+                                {(player.isEligibleForRanking && (player.gamesPlayed ?? 0) > 0) ? rankCounter : 'N/A'}
+                                {!player.isEligibleForRanking && (player.gamesPlayed ?? 0) > 0 && <AlertTriangle className="h-4 w-4 inline-block ml-1 text-amber-600" title="Provisional Rank"/>}
+                              </TableCell>
+                              <TableCell>
+                                <TooltipProvider delayDuration={100}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className={!player.isEligibleForRanking && (player.gamesPlayed ?? 0) > 0 ? "opacity-90" : ""}>
+                                        {player.name}
+                                        {!player.isEligibleForRanking && (player.gamesPlayed ?? 0) > 0 && <span className="text-xs text-muted-foreground"> (Prov.)</span>}
+                                      </span>
+                                    </TooltipTrigger>
+                                    {!player.isEligibleForRanking && (player.gamesNeededToQualify ?? 0) > 0 && (
+                                      <TooltipContent>
+                                        <p>Needs {player.gamesNeededToQualify} more game(s) to qualify for ranking.</p>
+                                      </TooltipContent>
+                                    )}
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </TableCell>
+                              <TableCell className="text-center">{player.gamesPlayed ?? 0}</TableCell>
+                              <TableCell className="text-center">{player.wins ?? 0}</TableCell>
+                              <TableCell className="text-center">{player.busts ?? 0}</TableCell>
+                              <TableCell className="text-center">{player.perfectGames ?? 0}</TableCell>
+                              <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displaySumOfPositions ?? 0).toFixed(3) : '-'}</TableCell>
+                              <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayWinBonusApplied ?? 0).toFixed(3) : '-'}</TableCell>
+                              <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayBustPenaltyApplied ?? 0).toFixed(3) : '-'}</TableCell>
+                              <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayPgBonusApplied ?? 0).toFixed(3) : '-'}</TableCell>
+                              <TableCell className="text-center">{(player.gamesPlayed ?? 0) > 0 ? (player.displayAdjustedSumOfPositions ?? 0).toFixed(3) : '-'}</TableCell>
+                              <TableCell className="text-center font-bold text-accent">
+                                {(player.gamesPlayed ?? 0) > 0 ? (player.finalTournamentScore ?? Infinity).toFixed(3) : 'N/A'}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </ScrollArea>
@@ -279,7 +331,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                                 <li key={game.id} className="text-sm p-2 border rounded-md bg-background hover:bg-muted/50 transition-colors">
                                     <Link href={`/game/${game.id}`} className="flex justify-between items-center">
                                         <span>
-                                            Game {game.gameNumberInTournament || '#'}: ID {game.id.substring(0,10)}...
+                                            Game {game.gameNumberInTournament || '#'}: ID {game.id.substring(0,11)}...
                                             (Players: {game.players.map(p=>p.name).join(', ')})
                                             {game.winnerId && ` - Winner: ${game.players.find(p=>p.id === game.winnerId)?.name || 'N/A'}`}
                                             {!game.isActive && !game.winnerId && " - No Winner (All Busted)"}
@@ -298,14 +350,15 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
             </>
           )}
         </CardContent>
-         <CardFooter>
-            <p className="text-xs text-muted-foreground">
-                Tournament scoring: (Sum of Places - (Wins * {(tournament?.winBonusK ?? 0).toFixed(2)}) + (Busts * {(tournament?.bustPenaltyK ?? 0).toFixed(2)}) - (PGs * {(tournament?.pgKickerK ?? 0).toFixed(2)})) / Games Played.
+         <CardFooter className="flex flex-col items-start text-xs text-muted-foreground space-y-1">
+            <p>
+                Tournament scoring: (Sum of Places - (Wins * {(tournament?.winBonusK ?? 0).toFixed(2)}) + (Busts * {(tournament?.bustPenaltyK ?? 0).toFixed(2)}) - (PGs * {(tournament?.pgKickerK ?? 0).toFixed(2)})) / Games Played. Lower is better.
+            </p>
+            <p>
+                Ranking Eligibility: Players must play at least {((tournament?.minGamesPct ?? 0) * 100).toFixed(0)}% of total tournament games ({Math.ceil((tournament?.minGamesPct ?? 0) * (tournament?.gameIds?.length || 0))} games currently) to qualify for a final rank. Provisional players are listed but not ranked.
             </p>
         </CardFooter>
       </Card>
     </div>
   );
 }
-
-    
