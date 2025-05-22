@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Gamepad2, History, Trophy, Users, Eye, ListChecks, Play, Trash2, AlertTriangle } from "lucide-react";
+import { Gamepad2, History, Trophy, Users, Eye, ListChecks, Play, Trash2, AlertTriangle, BarChartHorizontalBig } from "lucide-react";
 import Link from "next/link";
 import type { GameState } from '@/lib/types';
 import { LOCAL_STORAGE_KEYS } from '@/lib/constants';
@@ -105,6 +105,12 @@ export default function HomePage() {
       description: "Manage and track tournaments.",
       href: "/tournaments",
       icon: <Trophy className="h-8 w-8 text-primary" />,
+    },
+     {
+      title: "All-Time Stats",
+      description: "View overall player statistics.",
+      href: "/all-time-stats",
+      icon: <BarChartHorizontalBig className="h-8 w-8 text-primary" />,
     },
     {
       title: "Player Management",
