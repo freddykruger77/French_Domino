@@ -143,14 +143,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     if (!finalGameData.tournamentId) return;
 
     const gameKeyForStatCheck = `${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${finalGameData.id}`;
-    let gameDataFromLS: GameState | null = null;
+    let gameDataFromLSForFlagCheck: GameState | null = null;
     try {
         const gameDataStringForStatCheck = localStorage.getItem(gameKeyForStatCheck);
         if (gameDataStringForStatCheck) {
-            gameDataFromLS = JSON.parse(gameDataStringForStatCheck) as GameState;
-            if (gameDataFromLS.statsAppliedToTournament) {
+            gameDataFromLSForFlagCheck = JSON.parse(gameDataStringForStatCheck) as GameState;
+            if (gameDataFromLSForFlagCheck.statsAppliedToTournament) {
                 console.log(`Stats for game ${finalGameData.id} (tournament ${finalGameData.tournamentId}) already applied. Skipping.`);
-                // Ensure local component state reflects this if it was out of sync
                 if (game && game.id === finalGameData.id && !game.statsAppliedToTournament) {
                     setGame(prev => prev ? { ...prev, statsAppliedToTournament: true } : null);
                 }
@@ -163,9 +162,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         }
     } catch (e) {
         console.error("Error parsing game data for stat check in handleFinalizeTournamentGame:", e);
-        // Fall through to attempt stat application, but this state is risky.
     }
-
 
     const tournamentString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${finalGameData.tournamentId}`);
     if (!tournamentString) {
@@ -203,7 +200,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         if (!gamePlayerInstance) return tourneyPlayer;
 
         const rankInGame = gamePlayersSortedForRank.findIndex(p => p.id === gamePlayerInstance.id);
-        let P_i_game = rankInGame !== -1 ? rankInGame + 1 : T_i + 1; // Should always find if participated
+        let P_i_game = rankInGame !== -1 ? rankInGame + 1 : T_i + 1;
 
         const wonThisGame = !gamePlayerInstance.isBusted && P_i_game === 1; 
         const perfectGameThisGame = wonThisGame && gamePlayerInstance.currentScore === 0;
@@ -832,6 +829,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButtonGlobal = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
+                                     p.id !== boardPassIssuerId && // A different player must be able to receive
                                      !p.isBusted && 
                                      p.currentScore < game.targetScore - PENALTY_POINTS 
                                    );
@@ -855,7 +853,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <CardTitle className="text-3xl font-bold text-primary">Game: {gameId.substring(0, gameId.indexOf('-') !== -1 ? gameId.indexOf('-') + 9 : gameId.length)}</CardTitle>
+            <CardTitle className="text-3xl font-bold text-primary">Game: {gameId.substring(0, gameId.indexOf('-') !== -1 ? gameId.indexOf('-') + 11 : gameId.length)}</CardTitle>
             <CardDescription>
               Target Score: {game.targetScore} | Round: {game.currentRoundNumber}
               {game.tournamentId && 

@@ -71,7 +71,7 @@ export default function HomePage() {
       
       toast({
         title: "Game Removed",
-        description: `Game ${gameToRemoveId.substring(0, gameToRemoveId.indexOf('-') !== -1 ? gameToRemoveId.indexOf('-') + 9 : gameToRemoveId.length)}... has been removed.`,
+        description: `Game ${gameToRemoveId.substring(0, gameToRemoveId.indexOf('-') !== -1 ? gameToRemoveId.indexOf('-') + 11 : gameToRemoveId.length)}... has been removed.`,
       });
     } catch (error) {
       console.error("Error removing game:", error);
@@ -137,7 +137,7 @@ export default function HomePage() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                   <div className="flex-grow">
                     <h4 className="font-semibold text-lg text-primary-foreground">
-                      Game ID: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 9 : game.id.length)}
+                      Game ID: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 11 : game.id.length)}
                     </h4>
                     <p className="text-sm text-muted-foreground">
                       Players: {game.players.map(p => p.name).join(', ')}
@@ -203,7 +203,7 @@ export default function HomePage() {
               Confirm Remove Game
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove game "{gameToRemoveId ? gameToRemoveId.substring(0, gameToRemoveId.indexOf('-') !== -1 ? gameToRemoveId.indexOf('-') + 9 : gameToRemoveId.length) : ''}..."? 
+              Are you sure you want to remove game "{gameToRemoveId ? gameToRemoveId.substring(0, gameToRemoveId.indexOf('-') !== -1 ? gameToRemoveId.indexOf('-') + 11 : gameToRemoveId.length) : ''}..."? 
               This action cannot be undone and all game data will be lost.
             </AlertDialogDescription>
           </AlertDialogHeader>
