@@ -143,29 +143,29 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     if (!finalGameData.tournamentId) return;
 
     const gameKeyForStatCheck = `${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${finalGameData.id}`;
-    const gameDataStringForStatCheck = localStorage.getItem(gameKeyForStatCheck);
     let gameDataFromLS: GameState | null = null;
-
-    if (gameDataStringForStatCheck) {
-        try {
+    try {
+        const gameDataStringForStatCheck = localStorage.getItem(gameKeyForStatCheck);
+        if (gameDataStringForStatCheck) {
             gameDataFromLS = JSON.parse(gameDataStringForStatCheck) as GameState;
             if (gameDataFromLS.statsAppliedToTournament) {
                 console.log(`Stats for game ${finalGameData.id} (tournament ${finalGameData.tournamentId}) already applied. Skipping.`);
+                // Ensure local component state reflects this if it was out of sync
                 if (game && game.id === finalGameData.id && !game.statsAppliedToTournament) {
                     setGame(prev => prev ? { ...prev, statsAppliedToTournament: true } : null);
                 }
                 return;
             }
-        } catch (e) {
-            console.error("Error parsing game data for stat check in handleFinalizeTournamentGame:", e);
-            // Proceed with caution or return, depending on how critical this check is.
-            // For now, let's assume if parsing fails, we might proceed, but this is risky.
+        } else {
+             console.error(`Critical: Game ${finalGameData.id} for tournament ${finalGameData.tournamentId} not found in localStorage during stat finalization. Aborting stat update for this game.`);
+             toast({ title: "Tournament Sync Error", description: `Could not find game ${finalGameData.id.substring(5,10)} to finalize stats. Please check data integrity.`, variant: "destructive", duration: 7000});
+             return;
         }
-    } else {
-        console.error(`Critical: Game ${finalGameData.id} for tournament ${finalGameData.tournamentId} not found in localStorage during stat finalization. Aborting stat update for this game.`);
-        toast({ title: "Tournament Sync Error", description: `Could not find game ${finalGameData.id.substring(5,10)} to finalize stats. Please check data integrity.`, variant: "destructive", duration: 7000});
-        return;
+    } catch (e) {
+        console.error("Error parsing game data for stat check in handleFinalizeTournamentGame:", e);
+        // Fall through to attempt stat application, but this state is risky.
     }
+
 
     const tournamentString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${finalGameData.tournamentId}`);
     if (!tournamentString) {
@@ -178,7 +178,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       const tournament: Tournament = JSON.parse(tournamentString);
       const T_i = finalGameData.players.length; 
 
-      // Augment game players with zero-score round counts for this game
       const gameParticipantsForRanking = finalGameData.players.map(gp => {
         let zeroScoreRoundsInThisGame = 0;
         (finalGameData.rounds || []).forEach(r => {
@@ -189,23 +188,22 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         return { ...gp, zeroScoreRoundsInThisGame };
       });
       
-      const gamePlayersSortedForRank = gameParticipantsForRanking.sort((a, b) => {
+      const gamePlayersSortedForRank = [...gameParticipantsForRanking].sort((a, b) => {
         if (a.isBusted && !b.isBusted) return 1; 
         if (!a.isBusted && b.isBusted) return -1;
         
         if (a.currentScore !== b.currentScore) {
-          return a.currentScore - b.currentScore; // Ascending score
+          return a.currentScore - b.currentScore; 
         }
-        // Tie-breaker: more zero-score rounds is better (sort descending)
-        return b.zeroScoreRoundsInThisGame - a.zeroScoreRoundsInThisGame;
+        return b.zeroScoreRoundsInThisGame - a.zeroScoreRoundsInThisGame; 
       });
       
       tournament.players = tournament.players.map(tourneyPlayer => {
         const gamePlayerInstance = finalGameData.players.find(gp => gp.id === tourneyPlayer.id);
-        if (!gamePlayerInstance) return tourneyPlayer; // Player wasn't in this game
+        if (!gamePlayerInstance) return tourneyPlayer;
 
         const rankInGame = gamePlayersSortedForRank.findIndex(p => p.id === gamePlayerInstance.id);
-        let P_i_game = rankInGame !== -1 ? rankInGame + 1 : T_i + 1; 
+        let P_i_game = rankInGame !== -1 ? rankInGame + 1 : T_i + 1; // Should always find if participated
 
         const wonThisGame = !gamePlayerInstance.isBusted && P_i_game === 1; 
         const perfectGameThisGame = wonThisGame && gamePlayerInstance.currentScore === 0;
@@ -223,7 +221,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
       localStorage.setItem(`${LOCAL_STORAGE_KEYS.TOURNAMENT_STATE_PREFIX}${tournament.id}`, JSON.stringify(tournament));
       
-      // Re-fetch game data before marking to ensure atomicity for this flag
       const gameStringToMark = localStorage.getItem(gameKeyForStatCheck);
       if (gameStringToMark) {
           try {
@@ -835,7 +832,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButtonGlobal = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                     p.id !== boardPassIssuerId && 
                                      !p.isBusted && 
                                      p.currentScore < game.targetScore - PENALTY_POINTS 
                                    );
@@ -859,7 +855,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <CardTitle className="text-3xl font-bold text-primary">Game: {gameId.substring(0, gameId.indexOf('-') !== -1 ? gameId.indexOf('-') + 6 : gameId.length)}</CardTitle>
+            <CardTitle className="text-3xl font-bold text-primary">Game: {gameId.substring(0, gameId.indexOf('-') !== -1 ? gameId.indexOf('-') + 9 : gameId.length)}</CardTitle>
             <CardDescription>
               Target Score: {game.targetScore} | Round: {game.currentRoundNumber}
               {game.tournamentId && 
@@ -899,11 +895,11 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             </div>
           </div>
         )}
-        {gameIsOver && !winner && ( 
+        {gameIsOver && !winner && bustedPlayersOnGameOver.length > 0 && ( 
            <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md flex items-start">
             <XCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
             <div className="flex flex-col text-left">
-              <span className="font-semibold">Game Over. {bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length ? `All players busted: ${bustedPlayerNamesOnGameOver}.` : `No winner declared (Busted: ${bustedPlayerNamesOnGameOver}).`}</span>
+              <span className="font-semibold">Game Over. {bustedPlayersOnGameOver.length === game.players.length ? `All players busted: ${bustedPlayerNamesOnGameOver}.` : `No winner declared (Busted: ${bustedPlayerNamesOnGameOver}).`}</span>
             </div>
           </div>
         )}
