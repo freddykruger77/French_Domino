@@ -27,7 +27,7 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 // Helper function to select players for a game from a tournament roster
-// or provide a base selection.
+// or provide a base selection. Updated to ensure proper random selection.
 function selectPlayersForGame(
   tournamentPlayers: Player[],
   gameSize: number
@@ -36,18 +36,24 @@ function selectPlayersForGame(
   const currentRoster = tournamentPlayers || [];
 
   if (currentRoster.length === 0) {
+    // No players in tournament, fill with empty strings
     namesToSet = Array(gameSize).fill('');
   } else if (currentRoster.length <= gameSize) {
+    // Tournament has fewer or equal players than the game requires.
+    // Take all players from the tournament roster, in their current order.
     namesToSet = currentRoster.map(p => p.name);
+    // Pad with empty strings if currentRoster.length < gameSize
     while (namesToSet.length < gameSize) {
       namesToSet.push('');
     }
   } else {
-    const shuffledPlayers = shuffleArray([...currentRoster]);
+    // Tournament has more players than the game requires.
+    // Shuffle all tournament players and take the first 'gameSize'.
+    const shuffledPlayers = shuffleArray([...currentRoster]); // Ensure a copy is shuffled
     namesToSet = shuffledPlayers.slice(0, gameSize).map(p => p.name);
   }
-
-  // Final ensure length is correct
+  
+  // Final safety net to ensure the array length is exactly gameSize
   if (namesToSet.length > gameSize) {
     namesToSet = namesToSet.slice(0, gameSize);
   } else {
@@ -83,7 +89,7 @@ export default function NewGameForm() {
     if (tournament.playerParticipationMode === 'rotate_on_bust' && tournament.gameIds && tournament.gameIds.length > 0) {
         const lastGameId = tournament.gameIds[tournament.gameIds.length - 1];
         if (!lastGameId) {
-            toast({ title: "Rotation Info", description: "Error finding last game ID. Using random selection.", variant: "default" });
+            toast({ title: "Rotation Info", description: "Error finding last game ID for rotation. Using random selection.", variant: "default" });
             selectedPlayerNames = selectPlayersForGame(tournament.players || [], gameSizeForThisGame);
         } else {
             const lastGameString = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${lastGameId}`);
@@ -91,23 +97,24 @@ export default function NewGameForm() {
             if (lastGameString) {
                 try {
                     const lastGameData = JSON.parse(lastGameString) as GameState;
-                    const allTournamentPlayers = [...(tournament.players || [])];
+                    const allTournamentPlayers = [...(tournament.players || [])]; // Canonical list of players from tournament
 
                     const lastGamePlayerIdsInTournament = lastGameData.players.map(lgp => lgp.id);
                     
+                    // Explicitly exclude the winner from the busted list as a safeguard
                     const bustedPlayerIdsInLastGame = lastGameData.players
-                        .filter(p => p.isBusted)
+                        .filter(p => p.isBusted && p.id !== lastGameData.winnerId) // Ensure winner is not considered busted here
                         .map(p => p.id);
 
                     let nonBustedFromLastGamePool = shuffleArray(
                         allTournamentPlayers.filter(p =>
-                            lastGamePlayerIdsInTournament.includes(p.id) &&
-                            !bustedPlayerIdsInLastGame.includes(p.id)
+                            lastGamePlayerIdsInTournament.includes(p.id) && // Played in last game
+                            !bustedPlayerIdsInLastGame.includes(p.id)       // And was not in the (safeguarded) busted list
                         )
                     );
-
-                    // Keep playersWhoDidNotPlayLastGamePool in their original roster order to simulate a queue
+                    
                     let playersWhoDidNotPlayLastGamePool = allTournamentPlayers.filter(p => !lastGamePlayerIdsInTournament.includes(p.id));
+                    // This pool should NOT be shuffled to maintain queue order
 
                     let bustedFromLastGamePool = shuffleArray(
                         allTournamentPlayers.filter(p => bustedPlayerIdsInLastGame.includes(p.id))
@@ -119,7 +126,7 @@ export default function NewGameForm() {
                     while (selectedPlayerObjects.length < gameSizeForThisGame && nonBustedFromLastGamePool.length > 0) {
                       selectedPlayerObjects.push(nonBustedFromLastGamePool.shift()!);
                     }
-                    // Priority 2: Players who didn't play last game (in order)
+                    // Priority 2: Players who didn't play last game (in order from tournament roster)
                     while (selectedPlayerObjects.length < gameSizeForThisGame && playersWhoDidNotPlayLastGamePool.length > 0) {
                         selectedPlayerObjects.push(playersWhoDidNotPlayLastGamePool.shift()!);
                     }
@@ -151,13 +158,15 @@ export default function NewGameForm() {
                     selectedPlayerNames = selectPlayersForGame(tournament.players || [], gameSizeForThisGame);
                 }
             } else {
-                toast({ title: "Rotation Info", description: "No previous game data found for rotation. Using random selection.", variant: "default" });
+                toast({ title: "Rotation Info", description: "No previous game data found for rotation (last game string missing). Using random selection.", variant: "default" });
                 selectedPlayerNames = selectPlayersForGame(tournament.players || [], gameSizeForThisGame);
             }
         }
-    } else { // Fixed roster or first game of rotate_on_bust
+    } else { // Fixed roster or first game of rotate_on_bust or other modes
         if (tournament.playerParticipationMode === 'rotate_on_bust' && (!tournament.gameIds || tournament.gameIds.length === 0)) {
-            toast({ title: "Rotation Info", description: "First game in 'Rotate on Bust' mode. Using random player selection.", variant: "default" });
+            toast({ title: "Rotation Info", description: "First game in 'Rotate on Bust' mode. Using random player selection from roster.", variant: "default" });
+        } else if (tournament.playerParticipationMode === 'fixed_roster') {
+            toast({ title: "Fixed Roster Mode", description: "Players selected based on fixed roster rules (random from roster).", variant: "default" });
         }
         selectedPlayerNames = selectPlayersForGame(tournament.players || [], gameSizeForThisGame);
     }
@@ -167,7 +176,7 @@ export default function NewGameForm() {
 
   useEffect(() => {
     if (!isClient) {
-      return; // Only run on client
+      return; 
     }
   
     if (tournamentIdFromQuery) {
@@ -176,37 +185,35 @@ export default function NewGameForm() {
         try {
           const tournamentData = JSON.parse(tournamentString) as Tournament;
           setLinkedTournament(tournamentData);
-  
+          
           const numTournamentPlayers = (tournamentData.players || []).length;
-          // Determine game size for player selection: If tournament has >= MAX_PLAYERS, game is for MAX_PLAYERS. Else, game is for numTournamentPlayers (if > 0).
-          // If tournament has 0 players, default to MAX_PLAYERS for form slots for consistency.
-          const gamePlayerCountForForm = numTournamentPlayers >= MAX_PLAYERS ? MAX_PLAYERS : (numTournamentPlayers > 0 ? numTournamentPlayers : MAX_PLAYERS);
+          // Game size is MIN(MAX_PLAYERS, number of players in tournament IF > 0, else MAX_PLAYERS)
+          // This ensures game size doesn't exceed MAX_PLAYERS but uses actual tournament size if smaller.
+          const gameSize = Math.min(MAX_PLAYERS, numTournamentPlayers > 0 ? numTournamentPlayers : MAX_PLAYERS);
           
-          setNumPlayers(gamePlayerCountForForm); // This sets the number of input fields displayed
+          setNumPlayers(gameSize); 
           setTargetScore(tournamentData.targetScore);
-          initializePlayerNamesForTournament(tournamentData, gamePlayerCountForForm); // This calls setPlayerNames internally
+          initializePlayerNamesForTournament(tournamentData, gameSize); 
           
-          return; // Crucial: Exit after successful tournament setup to prevent non-tournament logic from running
-        } catch (e) {
+          return; 
+        } catch (e) { // Changed catch syntax
           console.error("Failed to parse tournament data for prefill:", e);
           toast({ title: "Error", description: "Could not load tournament data for prefill.", variant: "destructive" });
-          setLinkedTournament(null); // Fallback: allow non-tournament logic to run
+          setLinkedTournament(null); 
         }
       } else {
          toast({ title: "Error", description: `Tournament with ID ${tournamentIdFromQuery} not found.`, variant: "destructive" });
-         setLinkedTournament(null); // Fallback: allow non-tournament logic to run
+         setLinkedTournament(null); 
       }
     }
     
-    // This block runs if:
-    // 1. tournamentIdFromQuery is initially falsy (standard new game).
-    // 2. tournamentIdFromQuery was truthy, but tournament was not found or parsing failed.
+    // Non-tournament game setup or fallback
     setPlayerNames(currentPNs => {
         const newPlayerNamesArray = Array(numPlayers).fill('');
-        const sortedCachedPlayers = [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime());
+        // Ensure cachedPlayers is an array before sorting
+        const sortedCachedPlayers = Array.isArray(cachedPlayers) ? [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()) : [];
         const assignedNames = new Set<string>();
 
-        // Preserve existing names from currentPNs, if they are valid for the new numPlayers and not yet assigned
         for (let i = 0; i < numPlayers; i++) {
             if (i < currentPNs.length && currentPNs[i] && currentPNs[i].trim() !== '' && !assignedNames.has(currentPNs[i].trim().toLowerCase())) {
                 newPlayerNamesArray[i] = currentPNs[i];
@@ -214,7 +221,6 @@ export default function NewGameForm() {
             }
         }
         
-        // Fill remaining empty slots from sortedCachedPlayers, ensuring uniqueness
         let cacheIndex = 0;
         for (let i = 0; i < numPlayers; i++) {
             if (newPlayerNamesArray[i] === '' || newPlayerNamesArray[i].trim() === '') { 
@@ -233,7 +239,7 @@ export default function NewGameForm() {
         return newPlayerNamesArray;
     });
 
-  }, [isClient, tournamentIdFromQuery, initializePlayerNamesForTournament, numPlayers, cachedPlayers, toast]);
+  }, [isClient, tournamentIdFromQuery, initializePlayerNamesForTournament, numPlayers, cachedPlayers, toast]); // Added numPlayers, cachedPlayers
 
 
   const handlePlayerNameChange = (index: number, name: string) => {
@@ -264,16 +270,18 @@ export default function NewGameForm() {
     let currentPlayersData: PlayerInGame[];
 
     if (linkedTournament) {
+        // Use the player names from the form, but try to link them to tournament player IDs
         currentPlayersData = currentActivePlayerNames.map((name, index) => {
             const trimmedName = name.trim();
+            // Find player in tournament roster by name (case-insensitive)
             const tournamentPlayerMatch = (linkedTournament.players || []).find(p => p.name.toLowerCase() === trimmedName.toLowerCase());
-            const id = tournamentPlayerMatch ? tournamentPlayerMatch.id : `player-temp-${Date.now()}-${index}`;
+            const id = tournamentPlayerMatch ? tournamentPlayerMatch.id : `player-ingame-${Date.now()}-${index}`; // Use a temp ID if no match
             
             if (!tournamentPlayerMatch && trimmedName){
-                 toast({ title: "Player Note", description: `Player "${trimmedName}" is not in the original tournament roster or name differs. Stats may not link perfectly if name doesn't match.`, variant: "default", duration: 10000 });
+                 toast({ title: "Player Note", description: `Player "${trimmedName}" is not in the original tournament roster or name differs. Stats will be linked if name matches existing tournament player exactly.`, variant: "default", duration: 10000 });
             }
             return {
-                id: id,
+                id: id, // This ID will be used to match back to tournamentPlayerStats in Scoreboard
                 name: trimmedName,
                 currentScore: 0,
                 isBusted: false,
@@ -309,7 +317,7 @@ export default function NewGameForm() {
     localStorage.setItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${newGameId}`, JSON.stringify(newGame));
 
     setActiveGames(prevActiveGames => {
-        const currentList = prevActiveGames || [];
+        const currentList = prevActiveGames || []; // Ensure currentList is an array
         if (!currentList.includes(newGameId)) {
             return [...currentList, newGameId];
         }
@@ -330,7 +338,7 @@ export default function NewGameForm() {
 
     if (!linkedTournament) {
       const now = new Date().toISOString();
-      const updatedCachedPlayers: CachedPlayer[] = [...cachedPlayers];
+      const updatedCachedPlayers: CachedPlayer[] = Array.isArray(cachedPlayers) ? [...cachedPlayers] : [];
       currentPlayersData.forEach(p => {
         const existingCachedPlayerIndex = updatedCachedPlayers.findIndex(cp => cp.name.toLowerCase() === p.name.toLowerCase());
         if (existingCachedPlayerIndex !== -1) {
@@ -339,11 +347,11 @@ export default function NewGameForm() {
           updatedCachedPlayers.push({ id: p.id, name: p.name, lastUsed: now });
         }
       });
-      setCachedPlayers(
-        updatedCachedPlayers
+      // Ensure setCachedPlayers receives an array
+       const sortedNewCachedPlayers = updatedCachedPlayers
           .sort((a, b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime())
-          .slice(0, MAX_CACHED_PLAYERS)
-      );
+          .slice(0, MAX_CACHED_PLAYERS);
+      setCachedPlayers(Array.isArray(sortedNewCachedPlayers) ? sortedNewCachedPlayers : []);
     }
 
     router.push(`/game/${newGameId}`);
@@ -359,18 +367,17 @@ export default function NewGameForm() {
 
   const playerSourceForQuickAdd = linkedTournament
     ? (linkedTournament.players || []).map(p => ({id: p.id, name: p.name, lastUsed: ''}))
-    : cachedPlayers;
+    : (Array.isArray(cachedPlayers) ? cachedPlayers : []);
 
-  const gamePlayerCountForForm = numPlayers; // This state determines how many input fields are rendered
+  const gamePlayerCountForForm = numPlayers; 
 
   const handleReshuffleTournamentPlayers = () => {
     if (linkedTournament) {
-        // Determine game size based on tournament roster size, capped at MAX_PLAYERS
         const numTournamentPlayers = (linkedTournament.players || []).length;
-        const gameSizeForReshuffle = numTournamentPlayers >= MAX_PLAYERS ? MAX_PLAYERS : (numTournamentPlayers > 0 ? numTournamentPlayers : MAX_PLAYERS);
+        const gameSizeForReshuffle = Math.min(MAX_PLAYERS, numTournamentPlayers > 0 ? numTournamentPlayers : MAX_PLAYERS);
         
         const names = selectPlayersForGame(linkedTournament.players || [], gameSizeForReshuffle);
-        setPlayerNames(names); // Directly set the player names
+        setPlayerNames(names); 
         toast({title: "Players Re-shuffled", description: "A new random set of players selected from the tournament roster."})
     }
   };
@@ -388,7 +395,12 @@ export default function NewGameForm() {
           <CardContent className="p-0 text-sm text-primary/80 space-y-1">
             <p>
               Game players for this round: {gamePlayerCountForForm}. Target score: {linkedTournament.targetScore}.
-              Players are auto-selected based on tournament mode. You can change this selection below.
+              {linkedTournament.playerParticipationMode === 'rotate_on_bust' && (linkedTournament.gameIds?.length || 0) > 0 
+                ? " Players auto-selected based on rotation (non-busted > queue > busted). You can change selection."
+                : linkedTournament.playerParticipationMode === 'rotate_on_bust'
+                ? " First game in rotation mode: players randomly selected. You can change selection."
+                : " Players randomly selected from roster. You can change selection."
+              }
             </p>
             <Button
                 type="button"
@@ -396,7 +408,7 @@ export default function NewGameForm() {
                 size="sm"
                 className="mt-1 text-xs"
                 onClick={handleReshuffleTournamentPlayers}
-                disabled={ !linkedTournament || ((linkedTournament.players || []).length === 0) || (((linkedTournament.players || []).length <= gamePlayerCountForForm) && ((linkedTournament.players || []).length < MIN_PLAYERS)) }
+                disabled={ !linkedTournament || ((linkedTournament.players || []).length === 0) || (((linkedTournament.players || []).length < MIN_PLAYERS)) }
             >
                 <Shuffle className="mr-1 h-3 w-3" /> Re-shuffle Players
             </Button>
@@ -409,12 +421,12 @@ export default function NewGameForm() {
           <Select
             value={String(numPlayers)}
             onValueChange={(value) => {
-              if (!linkedTournament) { // Only allow change if not a tournament game
+              if (!linkedTournament) { 
                 const newNum = Number(value);
                 setNumPlayers(newNum);
               }
             }}
-            disabled={!!linkedTournament} // Disabled for tournament games
+            disabled={!!linkedTournament} 
           >
             <SelectTrigger id="numPlayers" className="w-full mt-1">
               <SelectValue placeholder="Select number of players" />
@@ -427,7 +439,7 @@ export default function NewGameForm() {
               ))}
             </SelectContent>
           </Select>
-          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count set to {gamePlayerCountForForm} by tournament rules. Edit names below if needed.</p>}
+          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count set to {gamePlayerCountForForm} for this tournament game. Edit player names/identities below if needed.</p>}
         </div>
 
       <div className="space-y-4">
@@ -451,7 +463,7 @@ export default function NewGameForm() {
                     </SelectTrigger>
                     <SelectContent>
                       {playerSourceForQuickAdd
-                        .filter(ps => { // Filter out names already definitely used in other slots
+                        .filter(ps => { 
                             const otherPlayerNamesLower = playerNames
                                 .slice(0, gamePlayerCountForForm)
                                 .filter((_, i) => i !== index)
