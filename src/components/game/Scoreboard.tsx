@@ -264,7 +264,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         const winnerPlayer = sortedNonBustedPlayers[0];
         gameToEnd.winnerId = winnerPlayer.id;
         
-        // This message is for the toast, not the green banner directly
         let winnerToastMessage = `${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
         if (winnerPlayer.currentScore === 0) {
           winnerToastMessage += " A PERFECT GAME!";
@@ -274,9 +273,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
            winnerToastMessage += " A dominant performance, outlasting all opponents!";
         }
         gameEndMessage = winnerToastMessage;
-        if (bustedPlayersInFinalState.length > 0) {
-            // This detail can be part of toast, but not primary banner
-        }
 
       } else { 
         gameToEnd.winnerId = undefined; 
@@ -848,13 +844,15 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canUndoLastScoredRound = game.rounds.length > 0; 
   const canUndoLastPenalty = (game.penaltyLog || []).length > 0; 
 
+  const newGameHref = gameIsOver && game.tournamentId ? `/new-game?tournamentId=${game.tournamentId}` : "/new-game";
+
 
   return (
     <Card className="w-full shadow-xl">
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <CardTitle className="text-3xl font-bold text-primary">Game: {gameId.substring(0, gameId.indexOf('-') !== -1 ? gameId.indexOf('-') + 11 : gameId.length)}</CardTitle>
+            <CardTitle className="text-3xl font-bold text-primary">Game: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 11 : game.id.length)}</CardTitle>
             <CardDescription>
               Target Score: {game.targetScore} | Round: {game.currentRoundNumber}
               {game.tournamentId && 
@@ -999,7 +997,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                     </Button>
                 </Link>
             )}
-            <Link href="/new-game" passHref>
+            <Link href={newGameHref} passHref>
               <Button size="lg" variant="default" className="bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white dark:text-primary-foreground px-8 py-6 text-lg">
                 <Gamepad2 className="mr-2 h-6 w-6" /> Start New Game
               </Button>
@@ -1188,3 +1186,4 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
+
