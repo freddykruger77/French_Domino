@@ -69,15 +69,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
  useEffect(() => {
     if (game === null && !isLoading) {
-      const gameDataExists = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`);
-      if (gameDataExists === null) {
-          toast({ title: "Error", description: `Game ${gameId.substring(0,10)}... not found. Redirecting.`, variant: "destructive" });
-          router.push('/');
-      }
-    } else if (game !== null && isLoading) { // Changed from (game && isLoading) to (game !== null && isLoading)
+      toast({ title: "Error", description: `Game ${gameId.substring(0,10)}... not found. Redirecting.`, variant: "destructive" });
+      router.push('/');
+    } else if (game !== null && isLoading) {
       setIsLoading(false);
     }
-  }, [game, isLoading, gameId, router, toast]);
+  }, [game, isLoading, router, toast, gameId, setIsLoading]);
 
 
   useEffect(() => {
@@ -102,7 +99,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       return newScores;
     }
     return {};
-  }, [game?.players, game?.gameMode, game?.currentRoundNumber]); // game.currentRoundNumber added for completeness if scores reset per round
+  }, [game?.players, game?.gameMode, game?.currentRoundNumber]); 
 
   useEffect(() => {
     setCurrentRoundScores(initialScoresForCurrentRound);
@@ -441,7 +438,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     };
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterRound);
-    // currentRoundScores will be reset by the useMemo/useEffect for initialScoresForCurrentRound due to currentRoundNumber change
+    
     setShowAddScoreDialog(false);
   };
 
@@ -614,7 +611,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     }
   };
   
-  const finalizeUndoScoredRound = (removePenaltiesForUndoneRound: boolean) => {
+  const finalizeUndoScoredRound = useCallback((removePenaltiesForUndoneRound: boolean) => {
     if (!game || lastScoredRoundNumberToUndo === null) return;
 
     const newRounds = game.rounds.slice(0, -1); 
@@ -677,7 +674,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
     setShowUndoScoredRoundPenaltiesDialog(false);
     setLastScoredRoundNumberToUndo(null);
-  };
+  }, [game, lastScoredRoundNumberToUndo, recalculatePlayerStatesFromHistory, setGame, toast, checkAndEndGame]);
 
   const handleTriggerUndoLastPenalty = () => {
     if (!game || !game.penaltyLog || game.penaltyLog.length === 0) {
@@ -693,7 +690,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     setShowUndoLastPenaltyConfirmDialog(true);
   };
 
-  const confirmUndoLastPenalty = () => {
+  const confirmUndoLastPenalty = useCallback(() => {
     if (!game || !game.penaltyLog || game.penaltyLog.length === 0 || !penaltyToUndoDetails) return;
 
     const newPenaltyLog = game.penaltyLog.slice(0, -1); 
@@ -741,7 +738,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     toast({ title: "Penalty Undone", description: `The last penalty applied to ${penaltyToUndoDetails.playerName} for ${penaltyToUndoDetails.points} points (reason: ${penaltyToUndoDetails.reason || 'N/A'}) in round period ${penaltyToUndoDetails.roundNumber} was successfully removed.` });
     setShowUndoLastPenaltyConfirmDialog(false);
     setPenaltyToUndoDetails(null);
-  };
+  }, [game, penaltyToUndoDetails, recalculatePlayerStatesFromHistory, setGame, toast, checkAndEndGame]);
 
 
   const handleEditScoreRequest = (roundNumber: number, playerId: string, currentScore: number) => {
@@ -759,7 +756,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     setShowEditScoreDialog(true);
   };
 
-  const handleConfirmEditIndividualScore = () => {
+  const handleConfirmEditIndividualScore = useCallback(() => {
     if (!game || !editingScoreDetails) return;
 
     const newScore = parseInt(newScoreForEdit, 10);
@@ -844,7 +841,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     toast({ title: "Score Edited", description: `Score for ${editingScoreDetails.playerName} in Round ${roundNumber} updated to ${newScore}.` });
     setShowEditScoreDialog(false);
     setEditingScoreDetails(null);
-  };
+  }, [game, editingScoreDetails, newScoreForEdit, originalPlayerIdsOrder, recalculatePlayerStatesFromHistory, setGame, toast, checkAndEndGame]);
 
 
   if (isLoading) {

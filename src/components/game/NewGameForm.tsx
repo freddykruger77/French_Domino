@@ -103,7 +103,7 @@ export default function NewGameForm() {
                     const lastGamePlayerIdsInTournament = lastGameData.players.map(lgp => lgp.id);
                     
                     const bustedPlayerIdsInLastGame = lastGameData.players
-                        .filter(p => p.isBusted && p.id !== lastGameData.winnerId) 
+                        .filter(p => p.isBusted && p.id !== lastGameData.winnerId) // Explicitly exclude winner
                         .map(p => p.id);
 
                     let nonBustedFromLastGamePool = shuffleArray(
@@ -185,7 +185,7 @@ export default function NewGameForm() {
           
           setNumPlayers(gameSize); 
           setTargetScore(tournamentData.targetScore);
-          setGameMode(tournamentData.gameMode || DEFAULT_GAME_MODE); // Assume tournaments can have a game mode or default
+          setGameMode(tournamentData.gameMode || DEFAULT_GAME_MODE);
           initializePlayerNamesForTournament(tournamentData, gameSize); 
           
           return; 
@@ -200,7 +200,7 @@ export default function NewGameForm() {
       }
     }
     
-    // Non-tournament game setup or fallback
+    
     const newPlayerNamesArray = Array(numPlayers).fill('');
     const sortedCachedPlayers = Array.isArray(cachedPlayers) ? [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()) : [];
     const assignedNames = new Set<string>();
@@ -222,7 +222,7 @@ export default function NewGameForm() {
     }
     setPlayerNames(newPlayerNamesArray);
 
-  }, [isClient, tournamentIdFromQuery, initializePlayerNamesForTournament, numPlayers, cachedPlayers, toast]);
+  }, [isClient, tournamentIdFromQuery, initializePlayerNamesForTournament, numPlayers, cachedPlayers, toast, setPlayerNames, setLinkedTournament, setTargetScore, setGameMode, setNumPlayers]);
 
 
   const handlePlayerNameChange = (index: number, name: string) => {
@@ -283,7 +283,7 @@ export default function NewGameForm() {
     const newGame: GameState = {
       id: newGameId,
       players: currentPlayersData,
-      targetScore: gameMode === 'generic' && targetScore <=0 ? 0 : targetScore, // For generic, 0 means no winning score
+      targetScore: gameMode === 'generic' && targetScore <=0 ? 0 : targetScore, 
       rounds: [],
       currentRoundNumber: 1,
       isActive: true,
@@ -494,7 +494,7 @@ export default function NewGameForm() {
         <Input
           id="targetScore"
           type="number"
-          min={gameMode === 'generic' ? "0" : "1"} // Generic can be 0 for no winning score
+          min={gameMode === 'generic' ? "0" : "1"} 
           value={targetScore}
           onChange={(e) => {
             if (!linkedTournament) setTargetScore(Number(e.target.value));
