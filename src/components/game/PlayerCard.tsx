@@ -5,7 +5,7 @@ import type { PlayerInGame, GameMode } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, ShieldPlus, User, Zap, Skull, Crown, Users, Target } from 'lucide-react';
+import { AlertTriangle, ShieldPlus, User, Zap, Skull, Crown, Users } from 'lucide-react';
 import { PENALTY_POINTS } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
@@ -34,33 +34,40 @@ export default function PlayerCard({
 }: PlayerCardProps) {
   
   const isFrenchDominoMode = gameMode === 'french_domino';
+  
+  // Nearing bust display is only for French Domino mode
   const isNearingBustDisplayOnly = isFrenchDominoMode && !player.isBusted && player.currentScore >= targetScore - PENALTY_POINTS && player.currentScore < targetScore;
   
   // Penalty protection logic for French Domino mode
   const isProtectedFromPenaltyFrenchDomino = isFrenchDominoMode && player.currentScore >= targetScore - PENALTY_POINTS;
+  // Penalty button is only available in French Domino mode and if game is active, player not busted, and not protected.
   const canReceivePenaltyButton = isGameActive && 
-                                  (!isFrenchDominoMode || !player.isBusted) && // Not busted in FD mode
-                                  (!isFrenchDominoMode || !isProtectedFromPenaltyFrenchDomino); // Not protected in FD mode
+                                  isFrenchDominoMode && 
+                                  !player.isBusted && 
+                                  !isProtectedFromPenaltyFrenchDomino;
 
 
   let statusBadge = null;
-  if (isFrenchDominoMode && player.isBusted) {
-    statusBadge = <Badge variant="destructive" className="flex items-center gap-1"><Skull className="h-3 w-3" /> Busted</Badge>;
-  } else if (isGameActive) { 
-    if (!isBeforeFirstRoundScored) { 
-      if (isShuffler) {
-        statusBadge = <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-100 dark:bg-orange-900/50 flex items-center gap-1 text-base px-3 py-1 shadow-md"><Zap className="h-4 w-4" /> SHUFFLE</Badge>;
-      } else if (isTiedForShuffle) {
-        statusBadge = <Badge variant="outline" className="border-purple-500 text-purple-600 bg-purple-100 dark:bg-purple-900/50 flex items-center gap-1 text-sm px-2 py-1 shadow-md"><Users className="h-4 w-4" /> TIE (Shuffle/Draw Last)</Badge>;
-      } else if (isNearingBustDisplayOnly) { 
-        statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
-      }
-    } else { 
-      if (isNearingBustDisplayOnly) { 
-        statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
+  if (isFrenchDominoMode) {
+    if (player.isBusted) {
+      statusBadge = <Badge variant="destructive" className="flex items-center gap-1"><Skull className="h-3 w-3" /> Busted</Badge>;
+    } else if (isGameActive) { 
+      if (!isBeforeFirstRoundScored) { 
+        if (isShuffler) {
+          statusBadge = <Badge variant="outline" className="border-orange-500 text-orange-600 bg-orange-100 dark:bg-orange-900/50 flex items-center gap-1 text-base px-3 py-1 shadow-md"><Zap className="h-4 w-4" /> SHUFFLE</Badge>;
+        } else if (isTiedForShuffle) {
+          statusBadge = <Badge variant="outline" className="border-purple-500 text-purple-600 bg-purple-100 dark:bg-purple-900/50 flex items-center gap-1 text-sm px-2 py-1 shadow-md"><Users className="h-4 w-4" /> TIE (Shuffle/Draw Last)</Badge>;
+        } else if (isNearingBustDisplayOnly) { 
+          statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
+        }
+      } else { 
+        if (isNearingBustDisplayOnly) { 
+          statusBadge = <Badge variant="outline" className="border-yellow-500 text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> Nearing Bust</Badge>;
+        }
       }
     }
   }
+  // No specific status badges for generic mode related to shuffle/bust
 
   const targetScoreLabel = isFrenchDominoMode ? "Target:" : (targetScore > 0 ? "Winning Score:" : "Score Goal:");
 
@@ -89,19 +96,19 @@ export default function PlayerCard({
           {targetScoreLabel} {targetScore > 0 ? targetScore : (isFrenchDominoMode ? targetScore : 'N/A')}
         </p>
       </CardContent>
-      {isGameActive && (!isFrenchDominoMode || !player.isBusted) && ( 
+      {isFrenchDominoMode && isGameActive && !player.isBusted && ( 
         <CardFooter>
           <Button
             variant="outline"
             size="sm"
             onClick={onPenalty}
-            disabled={!canReceivePenaltyButton}
+            disabled={!canReceivePenaltyButton} // Uses the refined condition
             className="w-full hover:bg-destructive/10 hover:border-destructive hover:text-destructive"
             title={!canReceivePenaltyButton 
-                    ? (isFrenchDominoMode && player.isBusted ? `${player.name} is already busted.` : 
+                    ? (player.isBusted ? `${player.name} is already busted.` : 
                        !isGameActive ? "Game is not active." :
-                       (isFrenchDominoMode && isProtectedFromPenaltyFrenchDomino) ? `${player.name} is protected from penalty (score ${player.currentScore}/${targetScore}). Penalty applies if score is less than ${targetScore - PENALTY_POINTS}.` :
-                       "Cannot apply penalty." // Generic fallback
+                       isProtectedFromPenaltyFrenchDomino ? `${player.name} is protected from penalty (score ${player.currentScore}/${targetScore}). Penalty applies if score is less than ${targetScore - PENALTY_POINTS}.` :
+                       "Cannot apply penalty." // Generic fallback for FD mode if other conditions fail
                       )
                     : `Add ${PENALTY_POINTS} points penalty.`
                   }
