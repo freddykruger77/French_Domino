@@ -67,24 +67,47 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const [originalPlayerIdsOrder, setOriginalPlayerIdsOrder] = useState<string[]>([]);
 
 
+  // Effect for loading game and handling missing game / redirection
+  useEffect(() => {
+    if (game === null && !isLoading) {
+      // If game is definitively null (useLocalStorage has resolved) and we are not in an initial component loading state
+      // Check localStorage one last time just to be sure before redirecting.
+      const gameDataExists = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`);
+      if (gameDataExists === null) {
+          toast({ title: "Error", description: `Game ${gameId.substring(0,10)}... not found. Redirecting.`, variant: "destructive" });
+          router.push('/');
+      }
+    } else if (game && isLoading) {
+      setIsLoading(false); // Game is loaded, stop loading indicator
+    }
+  }, [game, isLoading, gameId, router, toast]);
+
+  // Effect for initializing component state based on game data and migrating gameMode
   useEffect(() => {
     if (game) {
-      setIsLoading(false);
+      // Migrate gameMode if necessary
+      if (game.gameMode === undefined) {
+        setGame(prev => {
+          if (prev && prev.gameMode === undefined) {
+            return { ...prev, gameMode: DEFAULT_GAME_MODE };
+          }
+          return prev; // Return prev if no update is needed or prev is null
+        });
+        // Return early to allow React to process the state update.
+        // The effect will re-run with the migrated 'game' object.
+        return;
+      }
+
+      // Proceed with initializations if game is fully formed (including gameMode)
       const initialScores: Record<string, string> = {};
       game.players.forEach(p => initialScores[p.id] = '');
       setCurrentRoundScores(initialScores);
+
       if (originalPlayerIdsOrder.length === 0 && game.players.length > 0) {
         setOriginalPlayerIdsOrder(game.players.map(p => p.id));
       }
-      // Ensure gameMode exists, if not, default it (for older game states)
-      if (!game.gameMode) {
-        setGame(prev => prev ? {...prev, gameMode: DEFAULT_GAME_MODE} : null);
-      }
-    } else if(localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`) === null) {
-      toast({ title: "Error", description: "Game not found. Redirecting to home.", variant: "destructive" });
-      router.push('/');
     }
-  }, [game, gameId, router, toast, originalPlayerIdsOrder, setGame]);
+  }, [game, setGame, originalPlayerIdsOrder.length]); // Dependencies: game (for data), setGame (for migration), originalPlayerIdsOrder.length (for its conditional init)
 
 
   const recalculatePlayerStatesFromHistory = useCallback((
@@ -953,7 +976,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               <span className="font-semibold">Game Over. {bustedPlayersOnGameOver.length === game.players.length ? `All players busted: ${bustedPlayerNamesOnGameOver}.` : `No winner declared (Busted: ${bustedPlayerNamesOnGameOver}).`}</span>
             </div>
           </div>
-        )}
+         )}
          {gameIsOver && !winner && currentGamemode === 'generic' && (
            <div className="mt-4 p-4 bg-blue-100 dark:bg-blue-900/30 border border-blue-400 dark:border-blue-700 text-blue-700 dark:text-blue-300 rounded-md flex items-start">
             <CheckCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
@@ -1268,3 +1291,4 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
+
