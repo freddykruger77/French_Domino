@@ -81,28 +81,32 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   }, [game, isLoading, gameId, router, toast]);
 
 
-  // Effect for initializing component state based on game data and migrating gameMode
+  // Effect for game mode migration
   useEffect(() => {
-    if (game) {
-      if (game.gameMode === undefined) {
-        setGame(prev => {
-          if (prev && prev.gameMode === undefined) {
-            return { ...prev, gameMode: DEFAULT_GAME_MODE };
-          }
-          return prev; 
-        });
-        return; // Return early to allow React to process the state update.
-      }
+    if (game && game.gameMode === undefined) {
+      setGame(prevGame => {
+        if (prevGame && prevGame.gameMode === undefined) {
+          return { ...prevGame, gameMode: DEFAULT_GAME_MODE };
+        }
+        return prevGame;
+      });
+    }
+  }, [game, setGame]);
 
+  // Effect for initializing component state based on game data (once gameMode is defined)
+  useEffect(() => {
+    if (game && game.gameMode !== undefined) {
       const initialScores: Record<string, string> = {};
-      game.players.forEach(p => initialScores[p.id] = '');
+      if (Array.isArray(game.players)) {
+        game.players.forEach(p => initialScores[p.id] = '');
+      }
       setCurrentRoundScores(initialScores);
 
-      if (originalPlayerIdsOrder.length === 0 && game.players.length > 0) {
+      if (originalPlayerIdsOrder.length === 0 && Array.isArray(game.players) && game.players.length > 0) {
         setOriginalPlayerIdsOrder(game.players.map(p => p.id));
       }
     }
-  }, [game, setGame, originalPlayerIdsOrder.length, setCurrentRoundScores, setOriginalPlayerIdsOrder]);
+  }, [game, originalPlayerIdsOrder.length]); // `setCurrentRoundScores` and `setOriginalPlayerIdsOrder` are stable
 
 
   const recalculatePlayerStatesFromHistory = useCallback((
@@ -1277,3 +1281,4 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
+
