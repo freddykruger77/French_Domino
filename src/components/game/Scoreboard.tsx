@@ -69,13 +69,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
 
  useEffect(() => {
-    if (game === null && !isLoading) {
+    if (game === null && !isLoading && gameId) { // Added gameId check to prevent toast on initial load if gameId is not yet propogated
       toast({ title: "Error", description: `Game ${gameId.substring(0,10)}... not found. Redirecting.`, variant: "destructive" });
       router.push('/');
     } else if (game !== null && isLoading) {
       setIsLoading(false);
     }
-  }, [game, isLoading, router, toast, gameId, setIsLoading]);
+  }, [game, isLoading, router, toast, gameId]);
 
 
   // Effect for game mode migration
@@ -603,6 +603,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       toast({ title: "Nothing to Undo", description: "No rounds have been scored yet." });
       return;
     }
+    if (!game.isActive) {
+        toast({ title: "Cannot Undo", description: "Game has ended. Cannot undo scored rounds.", variant:"destructive" });
+        return;
+    }
 
     const lastRoundNumber = game.rounds[game.rounds.length - 1].roundNumber;
     setLastScoredRoundNumberToUndo(lastRoundNumber);
@@ -686,6 +690,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       toast({ title: "No Penalties to Undo", description: "There are no penalties recorded or penalties are not applicable in this game mode." });
       return;
     }
+    if (!game.isActive) {
+        toast({ title: "Cannot Undo", description: "Game has ended. Cannot undo penalties.", variant:"destructive" });
+        return;
+    }
     const lastPenalty = game.penaltyLog[game.penaltyLog.length - 1];
     const player = game.players.find(p => p.id === lastPenalty.playerId);
     setPenaltyToUndoDetails({
@@ -748,6 +756,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
   const handleEditScoreRequest = (roundNumber: number, playerId: string, currentScore: number) => {
     if (!game) return;
+    if (!game.isActive) {
+        toast({ title: "Cannot Edit", description: "Game has ended. Scores cannot be edited.", variant:"destructive" });
+        return;
+    }
     const player = game.players.find(p => p.id === playerId);
     if (!player) return;
 
@@ -851,25 +863,41 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const handleConfirmManualEndGame = () => {
     if (!game || game.gameMode !== 'generic' || game.targetScore > 0 || !game.isActive) return;
 
+    let winnerFoundId: string | undefined = undefined;
+    let toastMessage = "The generic game has been manually ended. ";
+
+    if (game.players.length > 0) {
+        const sortedPlayersByScore = [...game.players].sort((a, b) => b.currentScore - a.currentScore);
+        const highestScore = sortedPlayersByScore[0].currentScore;
+        const playersWithHighestScore = sortedPlayersByScore.filter(p => p.currentScore === highestScore);
+
+        if (playersWithHighestScore.length === 1) {
+            winnerFoundId = playersWithHighestScore[0].id;
+            toastMessage += `${playersWithHighestScore[0].name} wins with the highest score of ${highestScore}!`;
+        } else {
+            toastMessage += `Multiple players tied for the highest score (${highestScore}). No single winner declared.`;
+        }
+    } else {
+        toastMessage += "No players in the game.";
+    }
+
+
     const updatedGameData: Partial<GameState> = {
       isActive: false,
-      winnerId: undefined, // No automatic winner on manual end
-      // If generic games could be part of tournaments and need stat finalization, that logic would go here.
-      // For now, just marking it as "handled" if it was a tournament game.
+      winnerId: winnerFoundId,
       statsAppliedToTournament: game.tournamentId ? true : game.statsAppliedToTournament,
     };
     
     setGame(prevGame => {
         if (!prevGame) return null;
         const finalGameState = { ...prevGame, ...updatedGameData };
-        // Do not call checkAndEndGame here, as we are overriding the active state.
         return finalGameState;
     });
 
     toast({
       title: "Game Manually Ended",
-      description: "The generic game has been ended. No winner was automatically determined.",
-      duration: 5000,
+      description: toastMessage,
+      duration: 7000,
     });
     setShowConfirmManualEndDialog(false);
   };
@@ -953,8 +981,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                                           );
   const potentialBoardPassReceiversExist = currentGamemode === 'french_domino' && boardPassIssuerId && game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted && p.currentScore < game.targetScore - PENALTY_POINTS);
   
-  const canUndoLastScoredRound = game.rounds.length > 0; 
-  const canUndoLastPenalty = (game.penaltyLog || []).length > 0 && game.gameMode === 'french_domino'; // Penalties only for FD
+  const canUndoLastScoredRound = game.rounds.length > 0 && game.isActive; 
+  const canUndoLastPenalty = (game.penaltyLog || []).length > 0 && game.gameMode === 'french_domino' && game.isActive; 
 
   const newGameHref = gameIsOver && game.tournamentId ? `/new-game?tournamentId=${game.tournamentId}` : "/new-game";
 
@@ -1017,7 +1045,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
            <div className="mt-4 p-4 bg-blue-100 dark:bg-blue-900/30 border border-blue-400 dark:border-blue-700 text-blue-700 dark:text-blue-300 rounded-md flex items-start">
             <CheckCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
             <div className="flex flex-col text-left">
-              <span className="font-semibold">Game Over. No winner declared based on scores (or game was manually ended).</span>
+              <span className="font-semibold">Game Over. No winner declared (or game was manually ended with a tie for highest score).</span>
             </div>
           </div>
          )}
@@ -1102,16 +1130,16 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                       variant="outline" 
                       size="sm" 
                       onClick={triggerUndoLastScoredRound} 
-                      disabled={!canUndoLastScoredRound || !game.isActive} // Can't undo if game is over
+                      disabled={!canUndoLastScoredRound}
                     >
                       <Undo2 className="mr-2 h-4 w-4" /> Undo Last Scored Round
                     </Button>
-                    {game.gameMode === 'french_domino' && ( // Undo penalty only for FD
+                    {game.gameMode === 'french_domino' && ( 
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleTriggerUndoLastPenalty}
-                        disabled={!canUndoLastPenalty || !game.isActive} // Can't undo if game is over
+                        disabled={!canUndoLastPenalty} 
                         className="hover:bg-orange-500/10 hover:border-orange-600 hover:text-orange-700 dark:hover:bg-orange-500/20 dark:hover:border-orange-500 dark:hover:text-orange-400"
                       >
                         <Eraser className="mr-2 h-4 w-4" /> Undo Last Penalty
@@ -1333,7 +1361,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               </AlertDialogTitle>
               <AlertDialogDescription>
                 Are you sure you want to manually end this generic game? 
-                No winner will be automatically determined by score.
+                The player with the highest score will be declared the winner. If scores are tied, no winner will be declared.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
