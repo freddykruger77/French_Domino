@@ -32,7 +32,6 @@ export default function PlayerCard({
 }: PlayerCardProps) {
   const isNearingBustDisplayOnly = !player.isBusted && player.currentScore >= targetScore - PENALTY_POINTS && player.currentScore < targetScore;
   
-  // Penalty button disabled if game inactive, player busted, OR player is in protected zone (within PENALTY_POINTS of targetScore)
   const canReceivePenaltyButton = isGameActive && !player.isBusted && player.currentScore < targetScore - PENALTY_POINTS;
   
   let statusBadge = null;
@@ -73,7 +72,7 @@ export default function PlayerCard({
         <CardDescription>Current Score</CardDescription>
       </CardHeader>
       <CardContent className="pb-3">
-        <p className={`text-5xl font-bold ${player.isBusted ? 'text-destructive' : (isWinner && !player.isBusted ? 'text-yellow-600 dark:text-yellow-500' : 'text-accent')}`}>
+        <p className={`text-5xl font-bold ${player.isBusted ? 'text-destructive' : 'text-accent'}`}>
           {player.currentScore}
         </p>
         <p className="text-xs text-muted-foreground">Target: {targetScore}</p>
@@ -101,4 +100,3 @@ export default function PlayerCard({
     </Card>
   );
 }
-

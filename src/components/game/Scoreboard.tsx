@@ -264,17 +264,18 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         const winnerPlayer = sortedNonBustedPlayers[0];
         gameToEnd.winnerId = winnerPlayer.id;
         
-        let winnerText = `${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
+        // This message is for the toast, not the green banner directly
+        let winnerToastMessage = `${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
         if (winnerPlayer.currentScore === 0) {
-          winnerText += " A PERFECT GAME!";
+          winnerToastMessage += " A PERFECT GAME!";
         }
         const isLoneSurvivor = nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length > 0;
         if (isLoneSurvivor) {
-           winnerText += " A dominant performance, outlasting all opponents!";
+           winnerToastMessage += " A dominant performance, outlasting all opponents!";
         }
-        gameEndMessage = winnerText;
+        gameEndMessage = winnerToastMessage;
         if (bustedPlayersInFinalState.length > 0) {
-            gameEndMessage += ` (Busted: ${bustedPlayerNames})`;
+            // This detail can be part of toast, but not primary banner
         }
 
       } else { 
@@ -829,7 +830,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButtonGlobal = game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                     p.id !== boardPassIssuerId && // A different player must be able to receive
+                                     p.id !== boardPassIssuerId && 
                                      !p.isBusted && 
                                      p.currentScore < game.targetScore - PENALTY_POINTS 
                                    );
@@ -876,20 +877,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           )}
         </div>
          {gameIsOver && winner && (
-          <div className="mt-4 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-md flex items-start">
+          <div className="mt-4 p-4 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-md flex items-center">
             <Crown className="h-8 w-8 mr-3 text-yellow-500 dark:text-yellow-400 flex-shrink-0" />
             <div className="flex flex-col text-left">
               <span className="text-xl font-semibold">
                 {winner.name} wins with a score of {winner.currentScore}!
-                {winner.currentScore === 0 && " A PERFECT GAME!"}
-                {isLoneSurvivorWin && " A dominant performance, outlasting all opponents!"}
-                {' '}Congratulations!
               </span>
-              {bustedPlayersOnGameOver.length > 0 && (
-                <span className="text-sm mt-1">
-                  (Busted: {bustedPlayerNamesOnGameOver})
-                </span>
-              )}
+              <span className="text-lg">Congratulations!</span>
             </div>
           </div>
         )}
@@ -1194,5 +1188,3 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
-
-    
