@@ -68,37 +68,32 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
 
   // Effect for loading game and handling missing game / redirection
-  useEffect(() => {
+ useEffect(() => {
     if (game === null && !isLoading) {
-      // If game is definitively null (useLocalStorage has resolved) and we are not in an initial component loading state
-      // Check localStorage one last time just to be sure before redirecting.
       const gameDataExists = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`);
       if (gameDataExists === null) {
           toast({ title: "Error", description: `Game ${gameId.substring(0,10)}... not found. Redirecting.`, variant: "destructive" });
           router.push('/');
       }
     } else if (game && isLoading) {
-      setIsLoading(false); // Game is loaded, stop loading indicator
+      setIsLoading(false);
     }
   }, [game, isLoading, gameId, router, toast]);
+
 
   // Effect for initializing component state based on game data and migrating gameMode
   useEffect(() => {
     if (game) {
-      // Migrate gameMode if necessary
       if (game.gameMode === undefined) {
         setGame(prev => {
           if (prev && prev.gameMode === undefined) {
             return { ...prev, gameMode: DEFAULT_GAME_MODE };
           }
-          return prev; // Return prev if no update is needed or prev is null
+          return prev; 
         });
-        // Return early to allow React to process the state update.
-        // The effect will re-run with the migrated 'game' object.
-        return;
+        return; // Return early to allow React to process the state update.
       }
 
-      // Proceed with initializations if game is fully formed (including gameMode)
       const initialScores: Record<string, string> = {};
       game.players.forEach(p => initialScores[p.id] = '');
       setCurrentRoundScores(initialScores);
@@ -107,7 +102,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         setOriginalPlayerIdsOrder(game.players.map(p => p.id));
       }
     }
-  }, [game, setGame, originalPlayerIdsOrder.length]); // Dependencies: game (for data), setGame (for migration), originalPlayerIdsOrder.length (for its conditional init)
+  }, [game, setGame, originalPlayerIdsOrder.length, setCurrentRoundScores, setOriginalPlayerIdsOrder]);
 
 
   const recalculatePlayerStatesFromHistory = useCallback((
@@ -143,7 +138,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         const round = event.data;
         for (const player of newPlayerStates) {
           const scoreInRound = round.scores[player.id] || 0;
-          // In French Domino, busted players don't accumulate more score. Generic mode doesn't have busting.
           if (gameMode === 'french_domino' && player.isBusted) {
              player.roundScores.push(0); 
           } else {
@@ -172,11 +166,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
   const handleFinalizeTournamentGame = useCallback((finalGameData: GameState) => {
     if (!finalGameData.tournamentId || finalGameData.gameMode !== 'french_domino') {
-        // Tournament stats logic currently only for French Domino mode
         if (finalGameData.tournamentId && finalGameData.gameMode !== 'french_domino') {
             console.log(`Skipping tournament stat update for game ${finalGameData.id} as it's in generic mode.`);
              if (game && game.id === finalGameData.id && !game.statsAppliedToTournament) {
-                setGame(prev => prev ? { ...prev, statsAppliedToTournament: true } : null); // Mark as handled
+                setGame(prev => prev ? { ...prev, statsAppliedToTournament: true } : null); 
             }
         }
         return;
@@ -314,18 +307,16 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             }
         }
     } else if (gameToEnd.gameMode === 'generic') {
-        if (gameToEnd.targetScore > 0) { // Winning score is set
+        if (gameToEnd.targetScore > 0) { 
             const playersMeetingWinningScore = updatedPlayersList.filter(p => p.currentScore >= gameToEnd.targetScore);
             if (playersMeetingWinningScore.length > 0) {
                 gameShouldEndNow = gameToEnd.isActive;
-                // Sort by highest score among those who met/exceeded target, then by who met it first (implicit for now)
                 playersMeetingWinningScore.sort((a,b) => b.currentScore - a.currentScore);
                 const winnerPlayer = playersMeetingWinningScore[0];
                 gameToEnd.winnerId = winnerPlayer.id;
                 gameEndMessage = `${winnerPlayer.name} wins by reaching ${winnerPlayer.currentScore} points! (Target: ${gameToEnd.targetScore})`;
             }
         }
-        // If targetScore is 0 or not set for generic, game doesn't auto-end by score.
     }
 
     if (gameShouldEndNow) {
@@ -379,7 +370,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const scoresForRound: GameRoundScore = {};
     let isValid = true;
     game.players.forEach(player => {
-      // Only score active players in French Domino, all players in Generic
       if (game.gameMode === 'generic' || (game.gameMode === 'french_domino' && !player.isBusted)) {
         const scoreStr = currentRoundScores[player.id];
         const score = parseInt(scoreStr, 10);
@@ -412,7 +402,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       if (game.gameMode === 'french_domino') {
         isBustedAfterRound = newTotalScore >= game.targetScore;
       }
-      // In generic mode, isBusted remains false based on score
 
       return {
         ...player,
@@ -471,7 +460,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             return;
         }
     }
-    // No such protection in 'generic' mode
     
     const playersAfterPenalty = game.players.map((p, index) => {
       if (index === playerIndex) {
@@ -855,7 +843,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const isBeforeFirstRoundScored = game.rounds.length === 0;
   const activeNonBustedPlayersForDialogs = game.gameMode === 'french_domino' 
     ? game.players.filter(p => !p.isBusted)
-    : game.players; // In generic mode, all players are considered for scoring dialog if game is active
+    : game.players; 
 
   let shufflerPlayerIds: string[] = [];
   if (game.isActive && !isBeforeFirstRoundScored) {
@@ -893,7 +881,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         playersWithHighestScore = game.players.filter(p => p.currentScore === highestScoreInGame);
       }
     }
-    if (game.gameMode === 'french_domino') { // This milestone is FD specific due to score inflation
+    if (game.gameMode === 'french_domino') { 
         playersOver150 = game.players.filter(p => p.currentScore > 150);
     }
   }
@@ -1033,7 +1021,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                 <p><strong>Reached Over 150 Points:</strong> {playersOver150.map(p => `${p.name} (${p.currentScore})`).join(', ')}</p>
               )}
               
-              {/* Default message if no specific milestones hit for FD */}
               {currentGamemode === 'french_domino' && 
                 winner && 
                 winner.currentScore !== 0 && 
@@ -1042,7 +1029,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                 playersOver150.length === 0 && ( 
                 <p className="text-muted-foreground">No special milestones recorded for this game beyond the winner.</p>
               )}
-              {/* Message for generic games or no winner in FD */}
               {(currentGamemode === 'generic' || (!winner && currentGamemode === 'french_domino' && bustedPlayersOnGameOver.length > 0)) && 
                 (!playersWithHighestScore.length || highestScoreInGame === 0) && (
                  <p className="text-muted-foreground">Game concluded. Scores recorded.</p>
@@ -1291,4 +1277,3 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
-
