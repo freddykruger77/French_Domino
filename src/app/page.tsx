@@ -69,9 +69,20 @@ export default function HomePage() {
       // Update UI
       setActiveGames(prevGames => prevGames.filter(game => game.id !== gameToRemoveId));
       
+      let displayIdForToast = gameToRemoveId;
+      const idx = gameToRemoveId.indexOf('-');
+      if (idx !== -1 && idx + 1 < gameToRemoveId.length) {
+          const prefix = gameToRemoveId.substring(0, idx + 1);
+          const timestamp = gameToRemoveId.substring(idx + 1);
+          const suffix = timestamp.length > 6 ? timestamp.slice(-6) : timestamp;
+          displayIdForToast = prefix + suffix;
+      } else if (gameToRemoveId.length > 10) {
+          displayIdForToast = gameToRemoveId.substring(0, 7) + "...";
+      }
+
       toast({
         title: "Game Removed",
-        description: `Game ${gameToRemoveId.substring(0, gameToRemoveId.indexOf('-') !== -1 ? gameToRemoveId.indexOf('-') + 11 : gameToRemoveId.length)}... has been removed.`,
+        description: `Game ${displayIdForToast} has been removed.`,
       });
     } catch (error) {
       console.error("Error removing game:", error);
@@ -126,6 +137,20 @@ export default function HomePage() {
     },
   ];
 
+  const formatDisplayId = (id: string): string => {
+    let displayId = id;
+    const idx = id.indexOf('-');
+    if (idx !== -1 && idx + 1 < id.length) {
+        const prefix = id.substring(0, idx + 1);
+        const timestamp = id.substring(idx + 1);
+        const suffix = timestamp.length > 6 ? timestamp.slice(-6) : timestamp;
+        displayId = prefix + suffix;
+    } else if (id.length > 10) {
+        displayId = id.substring(0, 7) + "...";
+    }
+    return displayId;
+  };
+
   return (
     <div className="flex flex-col items-center justify-center py-8 md:py-12 space-y-8">
       {!isLoadingActiveGames && activeGames.length > 0 && (
@@ -138,38 +163,41 @@ export default function HomePage() {
             <CardDescription>You have ongoing games. Pick up where you left off or remove them.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {activeGames.map(game => (
-              <Card key={game.id} className="p-4 bg-secondary/30">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div className="flex-grow">
-                    <h4 className="font-semibold text-lg text-primary-foreground">
-                      Game ID: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 11 : game.id.length)}
-                    </h4>
-                    <p className="text-sm text-muted-foreground">
-                      Players: {game.players.map(p => p.name).join(', ')}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Started: {new Date(game.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto flex-shrink-0">
-                    <Link href={`/game/${game.id}`} passHref className="w-full sm:w-auto">
-                      <Button variant="default" size="lg" className="w-full">
-                        <Play className="mr-2 h-5 w-5" /> Resume
+            {activeGames.map(game => {
+              const displayGameId = formatDisplayId(game.id);
+              return (
+                <Card key={game.id} className="p-4 bg-secondary/30">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="flex-grow">
+                      <h4 className="font-semibold text-lg text-primary-foreground">
+                        Game ID: {displayGameId}
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        Players: {game.players.map(p => p.name).join(', ')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Started: {new Date(game.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto flex-shrink-0">
+                      <Link href={`/game/${game.id}`} passHref className="w-full sm:w-auto">
+                        <Button variant="default" size="lg" className="w-full">
+                          <Play className="mr-2 h-5 w-5" /> Resume
+                        </Button>
+                      </Link>
+                      <Button 
+                        variant="destructive" 
+                        size="lg" 
+                        onClick={() => handleRemoveGameClick(game.id)}
+                        className="w-full sm:w-auto"
+                      >
+                        <Trash2 className="mr-2 h-5 w-5" /> Remove
                       </Button>
-                    </Link>
-                    <Button 
-                      variant="destructive" 
-                      size="lg" 
-                      onClick={() => handleRemoveGameClick(game.id)}
-                      className="w-full sm:w-auto"
-                    >
-                      <Trash2 className="mr-2 h-5 w-5" /> Remove
-                    </Button>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </CardContent>
         </Card>
       )}
@@ -209,7 +237,7 @@ export default function HomePage() {
               Confirm Remove Game
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to remove game "{gameToRemoveId ? gameToRemoveId.substring(0, gameToRemoveId.indexOf('-') !== -1 ? gameToRemoveId.indexOf('-') + 11 : gameToRemoveId.length) : ''}..."? 
+              Are you sure you want to remove game "{gameToRemoveId ? formatDisplayId(gameToRemoveId) : ''}"? 
               This action cannot be undone and all game data will be lost.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -69,13 +69,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
 
  useEffect(() => {
-    if (game === null && !isLoading && gameId) { // Added gameId check to prevent toast on initial load if gameId is not yet propogated
+    if (game === null && !isLoading && gameId) {
       toast({ title: "Error", description: `Game ${gameId.substring(0,10)}... not found. Redirecting.`, variant: "destructive" });
       router.push('/');
     } else if (game !== null && isLoading) {
       setIsLoading(false);
     }
-  }, [game, isLoading, router, toast, gameId]);
+  }, [game, isLoading, router, toast, gameId, setIsLoading]);
 
 
   // Effect for game mode migration
@@ -891,6 +891,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     setGame(prevGame => {
         if (!prevGame) return null;
         const finalGameState = { ...prevGame, ...updatedGameData };
+        if (finalGameState.tournamentId && !finalGameState.statsAppliedToTournament) {
+          handleFinalizeTournamentGame(finalGameState);
+        }
         return finalGameState;
     });
 
@@ -986,13 +989,23 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
   const newGameHref = gameIsOver && game.tournamentId ? `/new-game?tournamentId=${game.tournamentId}` : "/new-game";
 
+  let displayBoardGameId = game.id;
+  const boardIdx = game.id.indexOf('-');
+  if (boardIdx !== -1 && boardIdx + 1 < game.id.length) {
+      const prefix = game.id.substring(0, boardIdx + 1);
+      const timestamp = game.id.substring(boardIdx + 1);
+      const suffix = timestamp.length > 6 ? timestamp.slice(-6) : timestamp;
+      displayBoardGameId = prefix + suffix;
+  } else if (game.id.length > 10) {
+      displayBoardGameId = game.id.substring(0, 7) + "...";
+  }
 
   return (
     <Card className="w-full shadow-xl">
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <CardTitle className="text-3xl font-bold text-primary">Game: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 11 : game.id.length)}</CardTitle>
+            <CardTitle className="text-3xl font-bold text-primary">Game: {displayBoardGameId}</CardTitle>
             <CardDescription className="flex items-center gap-2">
               <Settings2 className="h-4 w-4 text-muted-foreground"/>
               Mode: {currentGamemode === 'french_domino' ? 'French Domino' : 'Generic'} | {targetScoreLabel} | Round: {game.currentRoundNumber}

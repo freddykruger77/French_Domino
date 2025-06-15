@@ -198,6 +198,20 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
     return 'N/A';
   }
 
+  const formatDisplayId = (id: string): string => {
+    let displayId = id;
+    const idx = id.indexOf('-');
+    if (idx !== -1 && idx + 1 < id.length) {
+        const prefix = id.substring(0, idx + 1);
+        const timestamp = id.substring(idx + 1);
+        const suffix = timestamp.length > 6 ? timestamp.slice(-6) : timestamp;
+        displayId = prefix + suffix;
+    } else if (id.length > 10) { // Fallback for unexpected format
+        displayId = id.substring(0, 7) + "...";
+    }
+    return displayId;
+  };
+
   let rankCounter = 0;
 
   return (
@@ -331,7 +345,7 @@ export default function TournamentDetailsPage({ params }: TournamentDetailsPageP
                                 <li key={game.id} className="text-sm p-2 border rounded-md bg-background hover:bg-muted/50 transition-colors">
                                     <Link href={`/game/${game.id}`} className="flex justify-between items-center">
                                         <span>
-                                            Game {game.gameNumberInTournament || '#'}: ID {game.id.substring(0,11)}...
+                                            Game {game.gameNumberInTournament || '#'}: ID {formatDisplayId(game.id)}
                                             (Players: {game.players.map(p=>p.name).join(', ')})
                                             {game.winnerId && ` - Winner: ${game.players.find(p=>p.id === game.winnerId)?.name || 'N/A'}`}
                                             {!game.isActive && !game.winnerId && " - No Winner (All Busted)"}

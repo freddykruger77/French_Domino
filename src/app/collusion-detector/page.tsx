@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -66,6 +67,20 @@ export default function CollusionDetectorPage() {
   
   const selectedGameDetails = selectedGameId ? allGames.find(g => g.id === selectedGameId) : null;
 
+  const formatDisplayId = (id: string): string => {
+    let displayId = id;
+    const idx = id.indexOf('-');
+    if (idx !== -1 && idx + 1 < id.length) {
+        const prefix = id.substring(0, idx + 1);
+        const timestamp = id.substring(idx + 1);
+        const suffix = timestamp.length > 6 ? timestamp.slice(-6) : timestamp;
+        displayId = prefix + suffix;
+    } else if (id.length > 10) { // Fallback for unexpected format
+        displayId = id.substring(0, 7) + "...";
+    }
+    return displayId;
+  };
+
   return (
     <div className="max-w-2xl mx-auto py-8">
       <Link href="/" passHref>
@@ -89,7 +104,7 @@ export default function CollusionDetectorPage() {
                 {allGames.length > 0 ? (
                   allGames.map(game => (
                     <SelectItem key={game.id} value={game.id}>
-                      Game {game.id.substring(5, 10)} ({game.players.map(p => p.name).join(', ')}) - {game.rounds.length} rounds
+                      Game {formatDisplayId(game.id)} ({game.players.map(p => p.name).join(', ')}) - {game.rounds.length} rounds
                     </SelectItem>
                   ))
                 ) : (

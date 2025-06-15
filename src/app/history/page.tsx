@@ -61,7 +61,18 @@ export default function HistoryPage() {
             <div className="space-y-4">
               {completedGames.map(game => {
                 const winner = game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
-                const shortId = game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 11 : game.id.length);
+                
+                let shortId = game.id;
+                const idx = game.id.indexOf('-');
+                if (idx !== -1 && idx + 1 < game.id.length) {
+                    const prefix = game.id.substring(0, idx + 1);
+                    const timestamp = game.id.substring(idx + 1);
+                    const suffix = timestamp.length > 6 ? timestamp.slice(-6) : timestamp;
+                    shortId = prefix + suffix;
+                } else if (game.id.length > 10) { // Fallback for unexpected format
+                    shortId = game.id.substring(0, 7) + "...";
+                }
+
                 return (
                   <Card key={game.id} className="bg-secondary/30">
                     <CardHeader className="pb-3">
