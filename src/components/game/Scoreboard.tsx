@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect, useCallback }  from 'react';
+import { useState, useEffect, useCallback, useMemo }  from 'react';
 import type { GameState, PlayerInGame, GameRound, GameRoundScore, PenaltyLogEntry, Tournament, TournamentPlayerStats, GameMode } from '@/lib/types';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import PlayerCard from './PlayerCard';
@@ -67,7 +67,6 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const [originalPlayerIdsOrder, setOriginalPlayerIdsOrder] = useState<string[]>([]);
 
 
-  // Effect for loading game and handling missing game / redirection
  useEffect(() => {
     if (game === null && !isLoading) {
       const gameDataExists = localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`);
@@ -75,13 +74,12 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           toast({ title: "Error", description: `Game ${gameId.substring(0,10)}... not found. Redirecting.`, variant: "destructive" });
           router.push('/');
       }
-    } else if (game && isLoading) {
+    } else if (game !== null && isLoading) { // Changed from (game && isLoading) to (game !== null && isLoading)
       setIsLoading(false);
     }
   }, [game, isLoading, gameId, router, toast]);
 
 
-  // Effect for game mode migration
   useEffect(() => {
     if (game && game.gameMode === undefined) {
       setGame(prevGame => {
@@ -93,27 +91,42 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     }
   }, [game, setGame]);
 
-  // Effect for initializing component state based on game data (once gameMode is defined)
-  useEffect(() => {
-    if (game && game.gameMode !== undefined) {
-      const initialScores: Record<string, string> = {};
-      if (Array.isArray(game.players)) {
-        game.players.forEach(p => initialScores[p.id] = '');
-      }
-      setCurrentRoundScores(initialScores);
-
-      if (originalPlayerIdsOrder.length === 0 && Array.isArray(game.players) && game.players.length > 0) {
-        setOriginalPlayerIdsOrder(game.players.map(p => p.id));
-      }
+  const initialScoresForCurrentRound = useMemo(() => {
+    if (game && game.gameMode !== undefined && Array.isArray(game.players)) {
+      const newScores: Record<string, string> = {};
+      game.players.forEach(p => {
+        if (game.gameMode === 'generic' || (game.gameMode === 'french_domino' && !p.isBusted)) {
+            newScores[p.id] = '';
+        }
+      });
+      return newScores;
     }
-  }, [game, originalPlayerIdsOrder.length]); // `setCurrentRoundScores` and `setOriginalPlayerIdsOrder` are stable
+    return {};
+  }, [game?.players, game?.gameMode, game?.currentRoundNumber]); // game.currentRoundNumber added for completeness if scores reset per round
+
+  useEffect(() => {
+    setCurrentRoundScores(initialScoresForCurrentRound);
+  }, [initialScoresForCurrentRound, setCurrentRoundScores]);
+
+  const derivedPlayerOrder = useMemo(() => {
+    if (game && Array.isArray(game.players) && game.players.length > 0) {
+      return game.players.map(p => p.id);
+    }
+    return [];
+  }, [game?.players]);
+
+  useEffect(() => {
+    if (originalPlayerIdsOrder.length === 0 && derivedPlayerOrder.length > 0) {
+      setOriginalPlayerIdsOrder(derivedPlayerOrder);
+    }
+  }, [derivedPlayerOrder, originalPlayerIdsOrder.length, setOriginalPlayerIdsOrder]);
 
 
   const recalculatePlayerStatesFromHistory = useCallback((
     initialPlayersTemplate: PlayerInGame[],
     rounds: GameRound[],
     penaltyLog: PenaltyLogEntry[],
-    targetScore: number, // Bust score for FD, Winning score for Generic
+    targetScore: number,
     gameMode: GameMode
   ): PlayerInGame[] => {
     const newPlayerStates = initialPlayersTemplate.map(pTemplate => ({
@@ -428,9 +441,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     };
     
     updateGameStateAndCheckEnd(updatedGameData, playersAfterRound);
-    const initialScores: Record<string, string> = {};
-    (game.players || []).forEach(p => initialScores[p.id] = ''); 
-    setCurrentRoundScores(initialScores);
+    // currentRoundScores will be reset by the useMemo/useEffect for initialScoresForCurrentRound due to currentRoundNumber change
     setShowAddScoreDialog(false);
   };
 
@@ -899,7 +910,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   const canEnableBoardPassButtonGlobal = currentGamemode === 'french_domino' && game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
-                                     p.id !== boardPassIssuerId && 
+                                     p.id !== boardPassIssuerId && // Check against current dialog selection if any
                                      !p.isBusted && 
                                      p.currentScore < game.targetScore - PENALTY_POINTS 
                                    );
