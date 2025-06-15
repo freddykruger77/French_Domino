@@ -2,13 +2,13 @@
 "use client";
 
 import { useState, useEffect, useCallback }  from 'react';
-import type { GameState, PlayerInGame, GameRound, GameRoundScore, PenaltyLogEntry, Tournament, TournamentPlayerStats } from '@/lib/types';
+import type { GameState, PlayerInGame, GameRound, GameRoundScore, PenaltyLogEntry, Tournament, TournamentPlayerStats, GameMode } from '@/lib/types';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import PlayerCard from './PlayerCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History, Gamepad2, Annoyed, Trophy, Undo2, Pencil, Eraser, LinkIcon } from 'lucide-react';
-import { LOCAL_STORAGE_KEYS, PENALTY_POINTS } from '@/lib/constants';
+import { AlertTriangle, CheckCircle, Crown, PlusCircle, ShieldAlert, Users, XCircle, History, Gamepad2, Annoyed, Trophy, Undo2, Pencil, Eraser, LinkIcon, Settings2 } from 'lucide-react';
+import { LOCAL_STORAGE_KEYS, PENALTY_POINTS, DEFAULT_GAME_MODE } from '@/lib/constants';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,18 +76,23 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       if (originalPlayerIdsOrder.length === 0 && game.players.length > 0) {
         setOriginalPlayerIdsOrder(game.players.map(p => p.id));
       }
+      // Ensure gameMode exists, if not, default it (for older game states)
+      if (!game.gameMode) {
+        setGame(prev => prev ? {...prev, gameMode: DEFAULT_GAME_MODE} : null);
+      }
     } else if(localStorage.getItem(`${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${gameId}`) === null) {
       toast({ title: "Error", description: "Game not found. Redirecting to home.", variant: "destructive" });
       router.push('/');
     }
-  }, [game, gameId, router, toast, originalPlayerIdsOrder]);
+  }, [game, gameId, router, toast, originalPlayerIdsOrder, setGame]);
 
 
   const recalculatePlayerStatesFromHistory = useCallback((
     initialPlayersTemplate: PlayerInGame[],
     rounds: GameRound[],
     penaltyLog: PenaltyLogEntry[],
-    targetScore: number
+    targetScore: number, // Bust score for FD, Winning score for Generic
+    gameMode: GameMode
   ): PlayerInGame[] => {
     const newPlayerStates = initialPlayersTemplate.map(pTemplate => ({
       ...pTemplate,
@@ -115,24 +120,27 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         const round = event.data;
         for (const player of newPlayerStates) {
           const scoreInRound = round.scores[player.id] || 0;
-          if (!player.isBusted) {
+          // In French Domino, busted players don't accumulate more score. Generic mode doesn't have busting.
+          if (gameMode === 'french_domino' && player.isBusted) {
+             player.roundScores.push(0); 
+          } else {
              player.currentScore += scoreInRound;
              player.roundScores.push(scoreInRound);
-          } else {
-             player.roundScores.push(0); 
           }
         }
       } else if (event.type === 'penalty') {
         const penalty = event.data;
         const player = newPlayerStates.find(p => p.id === penalty.playerId);
-        if (player && !player.isBusted) { 
+        if (player && !(gameMode === 'french_domino' && player.isBusted)) { 
           player.currentScore += penalty.points;
         }
       }
       
-      for (const player of newPlayerStates) {
-        if (!player.isBusted && player.currentScore >= targetScore) {
-          player.isBusted = true;
+      if (gameMode === 'french_domino') {
+        for (const player of newPlayerStates) {
+          if (!player.isBusted && player.currentScore >= targetScore) {
+            player.isBusted = true;
+          }
         }
       }
     }
@@ -140,7 +148,17 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   }, []);
 
   const handleFinalizeTournamentGame = useCallback((finalGameData: GameState) => {
-    if (!finalGameData.tournamentId) return;
+    if (!finalGameData.tournamentId || finalGameData.gameMode !== 'french_domino') {
+        // Tournament stats logic currently only for French Domino mode
+        if (finalGameData.tournamentId && finalGameData.gameMode !== 'french_domino') {
+            console.log(`Skipping tournament stat update for game ${finalGameData.id} as it's in generic mode.`);
+             if (game && game.id === finalGameData.id && !game.statsAppliedToTournament) {
+                setGame(prev => prev ? { ...prev, statsAppliedToTournament: true } : null); // Mark as handled
+            }
+        }
+        return;
+    }
+
 
     const gameKeyForStatCheck = `${LOCAL_STORAGE_KEYS.GAME_STATE_PREFIX}${finalGameData.id}`;
     let gameDataFromLSForFlagCheck: GameState | null = null;
@@ -247,38 +265,48 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
 
   const checkAndEndGame = useCallback((currentGame: GameState, updatedPlayersList: PlayerInGame[]): GameState => {
     const gameToEnd = { ...currentGame, players: updatedPlayersList };
-    
-    const anyPlayerBustedThisAction = updatedPlayersList.some(p => p.isBusted);
-    const gameShouldEndNow = gameToEnd.isActive && anyPlayerBustedThisAction;
+    let gameShouldEndNow = false;
+    let gameEndMessage = "Game Over!";
+
+    if (gameToEnd.gameMode === 'french_domino') {
+        const anyPlayerBustedThisAction = updatedPlayersList.some(p => p.isBusted);
+        gameShouldEndNow = gameToEnd.isActive && anyPlayerBustedThisAction;
+
+        if (gameShouldEndNow) {
+            const nonBustedPlayers = updatedPlayersList.filter(p => !p.isBusted);
+            const bustedPlayersInFinalState = updatedPlayersList.filter(p => p.isBusted);
+            const bustedPlayerNames = bustedPlayersInFinalState.map(p => p.name).join(', ') || 'None';
+
+            if (nonBustedPlayers.length > 0) {
+                const sortedNonBustedPlayers = [...nonBustedPlayers].sort((a, b) => a.currentScore - b.currentScore);
+                const winnerPlayer = sortedNonBustedPlayers[0];
+                gameToEnd.winnerId = winnerPlayer.id;
+                let winnerToastMessage = `${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
+                if (winnerPlayer.currentScore === 0) winnerToastMessage += " A PERFECT GAME!";
+                if (nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length > 0) winnerToastMessage += " A dominant performance, outlasting all opponents!";
+                gameEndMessage = winnerToastMessage;
+            } else {
+                gameToEnd.winnerId = undefined;
+                gameEndMessage = `All players busted: ${bustedPlayerNames}. There is no winner.`;
+            }
+        }
+    } else if (gameToEnd.gameMode === 'generic') {
+        if (gameToEnd.targetScore > 0) { // Winning score is set
+            const playersMeetingWinningScore = updatedPlayersList.filter(p => p.currentScore >= gameToEnd.targetScore);
+            if (playersMeetingWinningScore.length > 0) {
+                gameShouldEndNow = gameToEnd.isActive;
+                // Sort by highest score among those who met/exceeded target, then by who met it first (implicit for now)
+                playersMeetingWinningScore.sort((a,b) => b.currentScore - a.currentScore);
+                const winnerPlayer = playersMeetingWinningScore[0];
+                gameToEnd.winnerId = winnerPlayer.id;
+                gameEndMessage = `${winnerPlayer.name} wins by reaching ${winnerPlayer.currentScore} points! (Target: ${gameToEnd.targetScore})`;
+            }
+        }
+        // If targetScore is 0 or not set for generic, game doesn't auto-end by score.
+    }
 
     if (gameShouldEndNow) {
       gameToEnd.isActive = false;
-      let gameEndMessage = "Game Over!";
-      
-      const nonBustedPlayers = updatedPlayersList.filter(p => !p.isBusted);
-      const bustedPlayersInFinalState = updatedPlayersList.filter(p => p.isBusted);
-      const bustedPlayerNames = bustedPlayersInFinalState.map(p => p.name).join(', ') || 'None';
-  
-      if (nonBustedPlayers.length > 0) {
-        const sortedNonBustedPlayers = [...nonBustedPlayers].sort((a, b) => a.currentScore - b.currentScore);
-        const winnerPlayer = sortedNonBustedPlayers[0];
-        gameToEnd.winnerId = winnerPlayer.id;
-        
-        let winnerToastMessage = `${winnerPlayer.name} wins with a score of ${winnerPlayer.currentScore}!`;
-        if (winnerPlayer.currentScore === 0) {
-          winnerToastMessage += " A PERFECT GAME!";
-        }
-        const isLoneSurvivor = nonBustedPlayers.length === 1 && bustedPlayersInFinalState.length > 0;
-        if (isLoneSurvivor) {
-           winnerToastMessage += " A dominant performance, outlasting all opponents!";
-        }
-        gameEndMessage = winnerToastMessage;
-
-      } else { 
-        gameToEnd.winnerId = undefined; 
-        gameEndMessage = `All players busted: ${bustedPlayerNames}. There is no winner.`;
-      }
-      
       toast({
         title: "Game Over!",
         description: gameEndMessage,
@@ -328,14 +356,15 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     const scoresForRound: GameRoundScore = {};
     let isValid = true;
     game.players.forEach(player => {
-      if (!player.isBusted) {
+      // Only score active players in French Domino, all players in Generic
+      if (game.gameMode === 'generic' || (game.gameMode === 'french_domino' && !player.isBusted)) {
         const scoreStr = currentRoundScores[player.id];
         const score = parseInt(scoreStr, 10);
         if (isNaN(score) || score < 0) {
           isValid = false;
         }
         scoresForRound[player.id] = score;
-      } else {
+      } else if (game.gameMode === 'french_domino' && player.isBusted) {
         scoresForRound[player.id] = 0; 
       }
     });
@@ -351,13 +380,21 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     };
     
     const playersAfterRound = game.players.map(player => {
-      if (player.isBusted) return player;
+      if (game.gameMode === 'french_domino' && player.isBusted) return player;
+
       const roundScore = scoresForRound[player.id] || 0;
       const newTotalScore = player.currentScore + roundScore;
+      
+      let isBustedAfterRound = player.isBusted;
+      if (game.gameMode === 'french_domino') {
+        isBustedAfterRound = newTotalScore >= game.targetScore;
+      }
+      // In generic mode, isBusted remains false based on score
+
       return {
         ...player,
         currentScore: newTotalScore,
-        isBusted: newTotalScore >= game.targetScore, 
+        isBusted: isBustedAfterRound, 
         roundScores: [...player.roundScores, roundScore],
       };
     });
@@ -396,28 +433,34 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     
     const playerToUpdate = game.players[playerIndex];
 
-    if (playerToUpdate.isBusted) {
-        toast({ title: "Penalty Blocked", description: `${playerToUpdate.name} is already busted.`, variant: "default" });
-        return;
+    if (game.gameMode === 'french_domino') {
+        if (playerToUpdate.isBusted) {
+            toast({ title: "Penalty Blocked", description: `${playerToUpdate.name} is already busted.`, variant: "default" });
+            return;
+        }
+        if (playerToUpdate.currentScore >= game.targetScore - PENALTY_POINTS) {
+            toast({ 
+                title: "Penalty Blocked", 
+                description: `${playerToUpdate.name} is within ${PENALTY_POINTS} points of busting (${playerToUpdate.currentScore}/${game.targetScore}) and is protected. Score must be < ${game.targetScore - PENALTY_POINTS}.`, 
+                variant: "default",
+                duration: 6000
+            });
+            return;
+        }
     }
-
-    if (playerToUpdate.currentScore >= game.targetScore - PENALTY_POINTS) {
-        toast({ 
-            title: "Penalty Blocked", 
-            description: `${playerToUpdate.name} is within ${PENALTY_POINTS} points of busting (${playerToUpdate.currentScore}/${game.targetScore}) and is protected from this penalty. Score must be < ${game.targetScore - PENALTY_POINTS}.`, 
-            variant: "default",
-            duration: 6000
-        });
-        return;
-    }
+    // No such protection in 'generic' mode
     
     const playersAfterPenalty = game.players.map((p, index) => {
       if (index === playerIndex) {
         const newScore = p.currentScore + PENALTY_POINTS;
+        let isBustedAfterPenalty = p.isBusted;
+        if (game.gameMode === 'french_domino') {
+            isBustedAfterPenalty = newScore >= game.targetScore;
+        }
         return {
           ...p,
           currentScore: newScore,
-          isBusted: newScore >= game.targetScore, 
+          isBusted: isBustedAfterPenalty, 
         };
       }
       return p;
@@ -437,14 +480,14 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     updateGameStateAndCheckEnd(updatedGameData, playersAfterPenalty);
     const updatedPlayer = playersAfterPenalty[playerIndex];
     let penaltyMessage = `${playerToUpdate.name} received a ${PENALTY_POINTS} point penalty. New score: ${updatedPlayer.currentScore}.`;
-    if (updatedPlayer.isBusted && !playerToUpdate.isBusted) { 
+    if (game.gameMode === 'french_domino' && updatedPlayer.isBusted && !playerToUpdate.isBusted) { 
       penaltyMessage += ` ${playerToUpdate.name} is now BUSTED!`;
     }
     toast({ title: "Penalty Applied", description: penaltyMessage});
   };
 
   const handleBoardPassSubmit = () => {
-    if (!game || !boardPassIssuerId) return;
+    if (!game || !boardPassIssuerId || game.gameMode !== 'french_domino') return;
     if (!game.isActive) {
       toast({ title: "Game Over", description: "Cannot declare board pass, game has ended.", variant: "destructive"});
       setShowBoardPassDialog(false);
@@ -570,7 +613,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       initialPlayersTemplate, 
       newRounds, 
       newPenaltyLog, 
-      game.targetScore
+      game.targetScore,
+      game.gameMode
     );
 
     const updatedGameData: Partial<GameState> = {
@@ -640,7 +684,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       initialPlayersTemplate,
       game.rounds, 
       newPenaltyLog, 
-      game.targetScore
+      game.targetScore,
+      game.gameMode
     );
 
     const updatedGameData: Partial<GameState> = {
@@ -740,7 +785,8 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
       initialPlayersTemplate,
       newRounds, 
       game.penaltyLog, 
-      game.targetScore
+      game.targetScore,
+      game.gameMode
     );
 
     const updatedGameData: Partial<GameState> = {
@@ -784,22 +830,27 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   }
   
   const isBeforeFirstRoundScored = game.rounds.length === 0;
-  const activeNonBustedPlayersForDialogs = game.players.filter(p => !p.isBusted);
+  const activeNonBustedPlayersForDialogs = game.gameMode === 'french_domino' 
+    ? game.players.filter(p => !p.isBusted)
+    : game.players; // In generic mode, all players are considered for scoring dialog if game is active
 
   let shufflerPlayerIds: string[] = [];
-  if (game.isActive && !isBeforeFirstRoundScored && activeNonBustedPlayersForDialogs.length > 1) {
-    const highestScore = Math.max(...activeNonBustedPlayersForDialogs.map(p => p.currentScore));
-    shufflerPlayerIds = activeNonBustedPlayersForDialogs
-      .filter(p => p.currentScore === highestScore)
-      .map(p => p.id);
-  } else if (game.isActive && activeNonBustedPlayersForDialogs.length === 1 && !isBeforeFirstRoundScored) {
-    shufflerPlayerIds = [activeNonBustedPlayersForDialogs[0].id]; 
+  if (game.isActive && !isBeforeFirstRoundScored) {
+      const relevantPlayersForShuffle = game.gameMode === 'french_domino' ? activeNonBustedPlayersForDialogs : game.players;
+      if (relevantPlayersForShuffle.length > 1) {
+        const highestScore = Math.max(...relevantPlayersForShuffle.map(p => p.currentScore));
+        shufflerPlayerIds = relevantPlayersForShuffle
+            .filter(p => p.currentScore === highestScore)
+            .map(p => p.id);
+      } else if (relevantPlayersForShuffle.length === 1) {
+        shufflerPlayerIds = [relevantPlayersForShuffle[0].id];
+      }
   }
 
 
   const gameIsOver = !game.isActive;
   const winner = gameIsOver && game.winnerId ? game.players.find(p => p.id === game.winnerId) : null;
-  const bustedPlayersOnGameOver = gameIsOver ? game.players.filter(p => p.isBusted) : [];
+  const bustedPlayersOnGameOver = game.gameMode === 'french_domino' && gameIsOver ? game.players.filter(p => p.isBusted) : [];
   const bustedPlayerNamesOnGameOver = bustedPlayersOnGameOver.map(p => p.name).join(', ');
   
   let isLoneSurvivorWin = false;
@@ -808,8 +859,10 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
   let playersOver150: PlayerInGame[] = [];
 
   if (gameIsOver) {
-    const nonBustedInGameOver = game.players.filter(p => !p.isBusted);
-    isLoneSurvivorWin = !!(winner && nonBustedInGameOver.length === 1 && bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length - 1);
+    const nonBustedInGameOver = game.players.filter(p => !(game.gameMode === 'french_domino' && p.isBusted));
+    if (game.gameMode === 'french_domino') {
+        isLoneSurvivorWin = !!(winner && nonBustedInGameOver.length === 1 && bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length - 1);
+    }
     
     if (game.players.length > 0) {
       highestScoreInGame = Math.max(...game.players.map(p => p.currentScore).filter(s => s !== Infinity && s !== -Infinity && !isNaN(s)));
@@ -817,13 +870,18 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         playersWithHighestScore = game.players.filter(p => p.currentScore === highestScoreInGame);
       }
     }
-    playersOver150 = game.players.filter(p => p.currentScore > 150);
+    if (game.gameMode === 'french_domino') { // This milestone is FD specific due to score inflation
+        playersOver150 = game.players.filter(p => p.currentScore > 150);
+    }
   }
 
+  const currentGamemode = game.gameMode || DEFAULT_GAME_MODE;
+  const targetScoreLabel = currentGamemode === 'french_domino' ? `Target Score: ${game.targetScore}` : (game.targetScore > 0 ? `Winning Score: ${game.targetScore}` : 'Round-Based Scoring');
 
-  const potentialBoardPassIssuers = game.players.filter(p => !p.isBusted && game.isActive);
+
+  const potentialBoardPassIssuers = game.players.filter(p => !(currentGamemode === 'french_domino' && p.isBusted) && game.isActive);
   
-  const canEnableBoardPassButtonGlobal = game.isActive && 
+  const canEnableBoardPassButtonGlobal = currentGamemode === 'french_domino' && game.isActive && 
                                    potentialBoardPassIssuers.length > 0 && 
                                    game.players.some(p => 
                                      p.id !== boardPassIssuerId && 
@@ -831,15 +889,15 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                                      p.currentScore < game.targetScore - PENALTY_POINTS 
                                    );
 
-  const boardPassDialogSelectDisabled = !game.isActive || potentialBoardPassIssuers.length === 0;
+  const boardPassDialogSelectDisabled = currentGamemode !== 'french_domino' || !game.isActive || potentialBoardPassIssuers.length === 0;
 
-  const boardPassDialogConfirmDisabled = !game.isActive || !boardPassIssuerId || 
+  const boardPassDialogConfirmDisabled = currentGamemode !== 'french_domino' || !game.isActive || !boardPassIssuerId || 
                                          !game.players.some(p => 
                                             p.id !== boardPassIssuerId && 
                                             !p.isBusted && 
                                             p.currentScore < game.targetScore - PENALTY_POINTS
                                           );
-  const potentialBoardPassReceiversExist = boardPassIssuerId && game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted && p.currentScore < game.targetScore - PENALTY_POINTS);
+  const potentialBoardPassReceiversExist = currentGamemode === 'french_domino' && boardPassIssuerId && game.players.some(p => p.id !== boardPassIssuerId && !p.isBusted && p.currentScore < game.targetScore - PENALTY_POINTS);
   
   const canUndoLastScoredRound = game.rounds.length > 0; 
   const canUndoLastPenalty = (game.penaltyLog || []).length > 0; 
@@ -853,8 +911,9 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <CardTitle className="text-3xl font-bold text-primary">Game: {game.id.substring(0, game.id.indexOf('-') !== -1 ? game.id.indexOf('-') + 11 : game.id.length)}</CardTitle>
-            <CardDescription>
-              Target Score: {game.targetScore} | Round: {game.currentRoundNumber}
+            <CardDescription className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4 text-muted-foreground"/>
+              Mode: {currentGamemode === 'french_domino' ? 'French Domino' : 'Generic'} | {targetScoreLabel} | Round: {game.currentRoundNumber}
               {game.tournamentId && 
                 <span className="block text-xs text-muted-foreground flex items-center gap-1">
                   <LinkIcon className="h-3 w-3"/>
@@ -865,9 +924,11 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           </div>
           {game.isActive && (
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              <Button onClick={() => setShowBoardPassDialog(true)} variant="outline" className="w-full sm:w-auto" disabled={!canEnableBoardPassButtonGlobal || !game.isActive}>
-                <Annoyed className="mr-2 h-5 w-5" /> Declare Board Pass
-              </Button>
+              {currentGamemode === 'french_domino' && (
+                <Button onClick={() => setShowBoardPassDialog(true)} variant="outline" className="w-full sm:w-auto" disabled={!canEnableBoardPassButtonGlobal || !game.isActive}>
+                  <Annoyed className="mr-2 h-5 w-5" /> Declare Board Pass
+                </Button>
+              )}
               <Button onClick={() => setShowAddScoreDialog(true)} size="lg" className="w-full sm:w-auto" disabled={!game.isActive || activeNonBustedPlayersForDialogs.length === 0}>
                 <PlusCircle className="mr-2 h-5 w-5" /> Add Round Scores
               </Button>
@@ -885,7 +946,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             </div>
           </div>
         )}
-        {gameIsOver && !winner && bustedPlayersOnGameOver.length > 0 && ( 
+        {gameIsOver && !winner && currentGamemode === 'french_domino' && bustedPlayersOnGameOver.length > 0 && ( 
            <div className="mt-4 p-4 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-md flex items-start">
             <XCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
             <div className="flex flex-col text-left">
@@ -893,6 +954,14 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             </div>
           </div>
         )}
+         {gameIsOver && !winner && currentGamemode === 'generic' && (
+           <div className="mt-4 p-4 bg-blue-100 dark:bg-blue-900/30 border border-blue-400 dark:border-blue-700 text-blue-700 dark:text-blue-300 rounded-md flex items-start">
+            <CheckCircle className="h-6 w-6 mr-2 flex-shrink-0 mt-0.5" />
+            <div className="flex flex-col text-left">
+              <span className="font-semibold">Game Over. No winner declared based on scores.</span>
+            </div>
+          </div>
+         )}
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -907,6 +976,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                 key={player.id}
                 player={player}
                 targetScore={game.targetScore}
+                gameMode={currentGamemode}
                 onPenalty={() => handlePenalty(player.id)}
                 isGameActive={game.isActive}
                 isBeforeFirstRoundScored={isBeforeFirstRoundScored}
@@ -927,24 +997,33 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm space-y-1 text-foreground/80">
-              {winner && winner.currentScore === 0 && (
+              {currentGamemode === 'french_domino' && winner && winner.currentScore === 0 && (
                 <p><strong>Perfect Game:</strong> {winner.name} won with 0 points!</p>
               )}
-              {isLoneSurvivorWin && winner && (
+              {currentGamemode === 'french_domino' && isLoneSurvivorWin && winner && (
                  <p><strong>Lone Survivor:</strong> {winner.name} was the last player standing!</p>
               )}
               {playersWithHighestScore.length > 0 && highestScoreInGame > 0 && (
                 <p><strong>Highest Score This Game:</strong> {highestScoreInGame} (Achieved by: {playersWithHighestScore.map(p => p.name).join(', ')})</p>
               )}
-              {playersOver150.length > 0 && (
+              {currentGamemode === 'french_domino' && playersOver150.length > 0 && (
                 <p><strong>Reached Over 150 Points:</strong> {playersOver150.map(p => `${p.name} (${p.currentScore})`).join(', ')}</p>
               )}
-              {(winner?.currentScore !== 0 && !isLoneSurvivorWin && (playersWithHighestScore.length === 0 || highestScoreInGame === 0) && playersOver150.length === 0 && !(winner && bustedPlayersOnGameOver.length > 0 && bustedPlayersOnGameOver.length === game.players.length -1)) && ( 
+              
+              {/* Default message if no specific milestones hit for FD */}
+              {currentGamemode === 'french_domino' && 
+                winner && 
+                winner.currentScore !== 0 && 
+                !isLoneSurvivorWin && 
+                (playersWithHighestScore.length === 0 || highestScoreInGame === 0) && 
+                playersOver150.length === 0 && ( 
                 <p className="text-muted-foreground">No special milestones recorded for this game beyond the winner.</p>
               )}
-               {(!winner && bustedPlayersOnGameOver.length > 0) && (
-                 <p className="text-muted-foreground">Game concluded with all players busted or no single winner. No specific winning milestones.</p>
-               )}
+              {/* Message for generic games or no winner in FD */}
+              {(currentGamemode === 'generic' || (!winner && currentGamemode === 'french_domino' && bustedPlayersOnGameOver.length > 0)) && 
+                (!playersWithHighestScore.length || highestScoreInGame === 0) && (
+                 <p className="text-muted-foreground">Game concluded. Scores recorded.</p>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1010,12 +1089,13 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Add Scores for Round {game.currentRoundNumber}</AlertDialogTitle>
               <AlertDialogDescription>
-                Enter the points each player scored in this round. Busted players are excluded.
+                Enter the points each player scored in this round. 
+                {currentGamemode === 'french_domino' ? " Busted players are excluded." : ""}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-4 py-4">
               {game.players.map(player => (
-                !player.isBusted && (
+                (currentGamemode === 'generic' || (currentGamemode === 'french_domino' && !player.isBusted)) && (
                   <div key={player.id} className="flex items-center justify-between">
                     <Label htmlFor={`score-${player.id}`} className="text-base min-w-[100px]">{player.name}:</Label>
                     <Input
@@ -1032,7 +1112,7 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
                 )
               ))}
               {activeNonBustedPlayersForDialogs.length === 0 && game.isActive && (
-                <p className="text-sm text-destructive text-center">All players are currently busted. No scores can be added.</p>
+                <p className="text-sm text-destructive text-center">All players are {currentGamemode === 'french_domino' ? 'currently busted' : 'unavailable'}. No scores can be added.</p>
               )}
                {!game.isActive && (
                  <p className="text-sm text-destructive text-center">Game has ended. No scores can be added.</p>
@@ -1045,53 +1125,55 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
           </AlertDialogContent>
         </AlertDialog>
 
-        <AlertDialog open={showBoardPassDialog} onOpenChange={setShowBoardPassDialog}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Declare Board Pass</AlertDialogTitle>
-              <AlertDialogDescription>
-                Select the player who successfully passed the board. All other active, non-busted players (not within {PENALTY_POINTS} points of target {game.targetScore}, i.e. score {"<"} {game.targetScore - PENALTY_POINTS}) will receive a {PENALTY_POINTS}-point penalty.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="space-y-4 py-4">
-              <Label htmlFor="board-pass-issuer">Player who passed the board:</Label>
-              <Select
-                value={boardPassIssuerId || undefined}
-                onValueChange={(value) => setBoardPassIssuerId(value)}
-                disabled={boardPassDialogSelectDisabled}
-              >
-                <SelectTrigger id="board-pass-issuer" disabled={boardPassDialogSelectDisabled}>
-                  <SelectValue placeholder="Select issuer..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {potentialBoardPassIssuers.map(player => (
-                      <SelectItem key={player.id} value={player.id}>
-                        {player.name}
-                      </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!game.isActive && (
-                 <p className="text-sm text-destructive text-center">Game has ended. Board pass cannot be declared.</p>
-              )}
-              {game.isActive && potentialBoardPassIssuers.length === 0 && (
-                <p className="text-sm text-destructive text-center">All players are currently busted. Board pass cannot be declared.</p>
-              )}
-               {game.isActive && boardPassIssuerId && !boardPassDialogConfirmDisabled && !potentialBoardPassReceiversExist && (
-                 <p className="text-sm text-destructive text-center">No other active players eligible to receive a penalty (all are busted or protected).</p>
-               )}
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => {setShowBoardPassDialog(false); setBoardPassIssuerId(null);}}>Cancel</AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={handleBoardPassSubmit} 
-                disabled={boardPassDialogConfirmDisabled || !game.isActive}
-              >
-                Confirm Board Pass
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {currentGamemode === 'french_domino' && (
+            <AlertDialog open={showBoardPassDialog} onOpenChange={setShowBoardPassDialog}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>Declare Board Pass</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Select the player who successfully passed the board. All other active, non-busted players (not within {PENALTY_POINTS} points of target {game.targetScore}, i.e. score {"<"} {game.targetScore - PENALTY_POINTS}) will receive a {PENALTY_POINTS}-point penalty.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="space-y-4 py-4">
+                <Label htmlFor="board-pass-issuer">Player who passed the board:</Label>
+                <Select
+                    value={boardPassIssuerId || undefined}
+                    onValueChange={(value) => setBoardPassIssuerId(value)}
+                    disabled={boardPassDialogSelectDisabled}
+                >
+                    <SelectTrigger id="board-pass-issuer" disabled={boardPassDialogSelectDisabled}>
+                    <SelectValue placeholder="Select issuer..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                    {potentialBoardPassIssuers.map(player => (
+                        <SelectItem key={player.id} value={player.id}>
+                            {player.name}
+                        </SelectItem>
+                    ))}
+                    </SelectContent>
+                </Select>
+                {!game.isActive && (
+                    <p className="text-sm text-destructive text-center">Game has ended. Board pass cannot be declared.</p>
+                )}
+                {game.isActive && potentialBoardPassIssuers.length === 0 && (
+                    <p className="text-sm text-destructive text-center">All players are currently busted. Board pass cannot be declared.</p>
+                )}
+                {game.isActive && boardPassIssuerId && !boardPassDialogConfirmDisabled && !potentialBoardPassReceiversExist && (
+                    <p className="text-sm text-destructive text-center">No other active players eligible to receive a penalty (all are busted or protected).</p>
+                )}
+                </div>
+                <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => {setShowBoardPassDialog(false); setBoardPassIssuerId(null);}}>Cancel</AlertDialogCancel>
+                <AlertDialogAction 
+                    onClick={handleBoardPassSubmit} 
+                    disabled={boardPassDialogConfirmDisabled || !game.isActive}
+                >
+                    Confirm Board Pass
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+            </AlertDialog>
+        )}
 
         <AlertDialog open={showUndoScoredRoundPenaltiesDialog} onOpenChange={(isOpen) => {
             setShowUndoScoredRoundPenaltiesDialog(isOpen);
@@ -1186,4 +1268,3 @@ export default function Scoreboard({ gameId }: ScoreboardProps) {
     </Card>
   );
 }
-

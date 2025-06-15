@@ -1,8 +1,11 @@
 
+import type { GameMode } from './types';
+
 export const DEFAULT_TARGET_SCORE = 100;
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 4; // Max players for a single game, not tournament
 export const PENALTY_POINTS = 10;
+export const DEFAULT_GAME_MODE: GameMode = 'french_domino';
 
 export const LOCAL_STORAGE_KEYS = {
   CACHED_PLAYERS: 'frenchDomino_cachedPlayers',

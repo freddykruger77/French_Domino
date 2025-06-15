@@ -1,4 +1,6 @@
 
+export type GameMode = 'french_domino' | 'generic';
+
 export interface Player {
   id: string;
   name: string;
@@ -6,7 +8,7 @@ export interface Player {
 
 export interface PlayerInGame extends Player {
   currentScore: number;
-  isBusted: boolean;
+  isBusted: boolean; // Remains relevant for French Domino mode
   roundScores: number[]; // score achieved in each round by this player
 }
 
@@ -29,7 +31,7 @@ export interface PenaltyLogEntry {
 export interface GameState {
   id: string;
   players: PlayerInGame[];
-  targetScore: number;
+  targetScore: number; // In French Domino: Bust Score. In Generic: Winning Score (optional).
   rounds: GameRound[];
   currentRoundNumber: number;
   isActive: boolean;
@@ -43,6 +45,7 @@ export interface GameState {
   tournamentId?: string; // ID of the tournament this game belongs to
   gameNumberInTournament?: number; // Sequence number of this game within the tournament
   statsAppliedToTournament?: boolean; // True if this game's stats have been applied to its tournament
+  gameMode: GameMode;
 }
 
 export interface TournamentPlayerStats extends Player {
@@ -85,6 +88,7 @@ export interface Tournament {
 
   // Eligibility gate
   minGamesPct: number; // Minimum games played percentage to qualify for ranking (e.g., 0.10 for 10%)
+  gameMode?: GameMode; // Future: Tournaments could have a game mode
 }
 
 export interface CachedPlayer extends Player {

@@ -1,17 +1,18 @@
 
 "use client";
 
-import type { PlayerInGame } from '@/lib/types';
+import type { PlayerInGame, GameMode } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, ShieldPlus, User, Zap, Skull, Crown, Users } from 'lucide-react';
+import { AlertTriangle, ShieldPlus, User, Zap, Skull, Crown, Users, Target } from 'lucide-react';
 import { PENALTY_POINTS } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
 interface PlayerCardProps {
   player: PlayerInGame;
-  targetScore: number;
+  targetScore: number; // Bust Score for French Domino, Winning Score for Generic
+  gameMode: GameMode;
   onPenalty: () => void;
   isGameActive: boolean;
   isBeforeFirstRoundScored: boolean;
@@ -23,6 +24,7 @@ interface PlayerCardProps {
 export default function PlayerCard({
   player,
   targetScore,
+  gameMode,
   onPenalty,
   isGameActive,
   isBeforeFirstRoundScored,
@@ -30,12 +32,19 @@ export default function PlayerCard({
   isTiedForShuffle,
   isWinner,
 }: PlayerCardProps) {
-  const isNearingBustDisplayOnly = !player.isBusted && player.currentScore >= targetScore - PENALTY_POINTS && player.currentScore < targetScore;
   
-  const canReceivePenaltyButton = isGameActive && !player.isBusted && player.currentScore < targetScore - PENALTY_POINTS;
+  const isFrenchDominoMode = gameMode === 'french_domino';
+  const isNearingBustDisplayOnly = isFrenchDominoMode && !player.isBusted && player.currentScore >= targetScore - PENALTY_POINTS && player.currentScore < targetScore;
   
+  // Penalty protection logic for French Domino mode
+  const isProtectedFromPenaltyFrenchDomino = isFrenchDominoMode && player.currentScore >= targetScore - PENALTY_POINTS;
+  const canReceivePenaltyButton = isGameActive && 
+                                  (!isFrenchDominoMode || !player.isBusted) && // Not busted in FD mode
+                                  (!isFrenchDominoMode || !isProtectedFromPenaltyFrenchDomino); // Not protected in FD mode
+
+
   let statusBadge = null;
-  if (player.isBusted) {
+  if (isFrenchDominoMode && player.isBusted) {
     statusBadge = <Badge variant="destructive" className="flex items-center gap-1"><Skull className="h-3 w-3" /> Busted</Badge>;
   } else if (isGameActive) { 
     if (!isBeforeFirstRoundScored) { 
@@ -53,18 +62,19 @@ export default function PlayerCard({
     }
   }
 
+  const targetScoreLabel = isFrenchDominoMode ? "Target:" : (targetScore > 0 ? "Winning Score:" : "Score Goal:");
 
   return (
     <Card className={cn(
       "shadow-md transition-all",
-      player.isBusted ? 'opacity-60 bg-muted/50' : 'bg-card',
-      isWinner && !player.isBusted ? 'border-2 border-yellow-400 dark:border-yellow-500 bg-yellow-50 dark:bg-yellow-800/30 shadow-lg shadow-yellow-500/30 dark:shadow-yellow-400/20' : ''
+      (isFrenchDominoMode && player.isBusted) ? 'opacity-60 bg-muted/50' : 'bg-card',
+      isWinner && (!isFrenchDominoMode || !player.isBusted) ? 'border-2 border-yellow-400 dark:border-yellow-500 bg-yellow-50 dark:bg-yellow-800/30 shadow-lg shadow-yellow-500/30 dark:shadow-yellow-400/20' : ''
     )}>
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <CardTitle className="text-xl font-semibold flex items-center gap-2">
-            {isWinner && !player.isBusted && <Crown className="h-6 w-6 text-yellow-500 dark:text-yellow-400" />}
-            <User className={`h-6 w-6 ${player.isBusted ? 'text-muted-foreground' : (isWinner && !player.isBusted ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary')}`} />
+            {isWinner && (!isFrenchDominoMode || !player.isBusted) && <Crown className="h-6 w-6 text-yellow-500 dark:text-yellow-400" />}
+            <User className={`h-6 w-6 ${ (isFrenchDominoMode && player.isBusted) ? 'text-muted-foreground' : (isWinner && (!isFrenchDominoMode || !player.isBusted) ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary')}`} />
             {player.name}
           </CardTitle>
           {statusBadge}
@@ -72,12 +82,14 @@ export default function PlayerCard({
         <CardDescription>Current Score</CardDescription>
       </CardHeader>
       <CardContent className="pb-3">
-        <p className={`text-5xl font-bold ${player.isBusted ? 'text-destructive' : 'text-accent'}`}>
+        <p className={`text-5xl font-bold ${ (isFrenchDominoMode && player.isBusted) ? 'text-destructive' : 'text-accent'}`}>
           {player.currentScore}
         </p>
-        <p className="text-xs text-muted-foreground">Target: {targetScore}</p>
+        <p className="text-xs text-muted-foreground">
+          {targetScoreLabel} {targetScore > 0 ? targetScore : (isFrenchDominoMode ? targetScore : 'N/A')}
+        </p>
       </CardContent>
-      {isGameActive && !player.isBusted && ( 
+      {isGameActive && (!isFrenchDominoMode || !player.isBusted) && ( 
         <CardFooter>
           <Button
             variant="outline"
@@ -86,9 +98,10 @@ export default function PlayerCard({
             disabled={!canReceivePenaltyButton}
             className="w-full hover:bg-destructive/10 hover:border-destructive hover:text-destructive"
             title={!canReceivePenaltyButton 
-                    ? (player.isBusted ? `${player.name} is already busted.` : 
+                    ? (isFrenchDominoMode && player.isBusted ? `${player.name} is already busted.` : 
                        !isGameActive ? "Game is not active." :
-                       `${player.name} is protected from penalty (score ${player.currentScore}/${targetScore}). Penalty applies if score is less than ${targetScore - PENALTY_POINTS}.`
+                       (isFrenchDominoMode && isProtectedFromPenaltyFrenchDomino) ? `${player.name} is protected from penalty (score ${player.currentScore}/${targetScore}). Penalty applies if score is less than ${targetScore - PENALTY_POINTS}.` :
+                       "Cannot apply penalty." // Generic fallback
                       )
                     : `Add ${PENALTY_POINTS} points penalty.`
                   }
