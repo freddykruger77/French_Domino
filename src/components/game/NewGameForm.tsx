@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, MAX_PLAYERS, LOCAL_STORAGE_KEYS, DEFAULT_GAME_MODE } from '@/lib/constants';
+import { DEFAULT_TARGET_SCORE, MIN_PLAYERS, MAX_PLAYERS as MAX_FRENCH_DOMINO_PLAYERS, LOCAL_STORAGE_KEYS, DEFAULT_GAME_MODE } from '@/lib/constants';
 import type { PlayerInGame, GameState, CachedPlayer, Tournament, Player, GameMode } from '@/lib/types';
 import useLocalStorage from '@/hooks/useLocalStorage';
 import { PlusCircle, Trash2, UserPlus, Info, Shuffle, Gamepad } from 'lucide-react';
@@ -70,8 +70,8 @@ export default function NewGameForm() {
 
   const tournamentIdFromQuery = searchParams.get('tournamentId');
 
-  const [numPlayers, setNumPlayers] = useState<number>(MAX_PLAYERS);
-  const [playerNames, setPlayerNames] = useState<string[]>(Array(MAX_PLAYERS).fill(''));
+  const [numPlayers, setNumPlayers] = useState<number>(MIN_PLAYERS);
+  const [playerNames, setPlayerNames] = useState<string[]>(Array(MIN_PLAYERS).fill(''));
   const [targetScore, setTargetScore] = useState<number>(DEFAULT_TARGET_SCORE);
   const [gameMode, setGameMode] = useState<GameMode>(DEFAULT_GAME_MODE);
 
@@ -83,6 +83,16 @@ export default function NewGameForm() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Effect to keep playerNames array size in sync with numPlayers, preserving existing data.
+  useEffect(() => {
+    setPlayerNames(current => {
+      if (current.length === numPlayers) return current;
+      const newArray = new Array(numPlayers).fill('');
+      current.slice(0, numPlayers).forEach((name, i) => newArray[i] = name);
+      return newArray;
+    });
+  }, [numPlayers, setPlayerNames]);
 
   const initializePlayerNamesForTournament = useCallback((tournament: Tournament, gameSizeForThisGame: number) => {
     let selectedPlayerNames: string[] = [];
@@ -168,6 +178,7 @@ export default function NewGameForm() {
   }, [setPlayerNames, toast]);
 
 
+  // Effect for one-time initialization
   useEffect(() => {
     if (!isClient) {
       return; 
@@ -181,7 +192,7 @@ export default function NewGameForm() {
           setLinkedTournament(tournamentData);
           
           const numTournamentPlayers = (tournamentData.players || []).length;
-          const gameSize = Math.min(MAX_PLAYERS, numTournamentPlayers > 0 ? numTournamentPlayers : MAX_PLAYERS);
+          const gameSize = Math.min(MAX_FRENCH_DOMINO_PLAYERS, numTournamentPlayers > 0 ? numTournamentPlayers : MAX_FRENCH_DOMINO_PLAYERS);
           
           setNumPlayers(gameSize); 
           setTargetScore(tournamentData.targetScore);
@@ -198,31 +209,35 @@ export default function NewGameForm() {
          toast({ title: "Error", description: `Tournament with ID ${tournamentIdFromQuery} not found.`, variant: "destructive" });
          setLinkedTournament(null); 
       }
-    }
-    
-    
-    const newPlayerNamesArray = Array(numPlayers).fill('');
-    const sortedCachedPlayers = Array.isArray(cachedPlayers) ? [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()) : [];
-    const assignedNames = new Set<string>();
-    
-    let cacheIndex = 0;
-    for (let i = 0; i < numPlayers; i++) {
-        if (newPlayerNamesArray[i] === '' || newPlayerNamesArray[i].trim() === '') { 
-            while(cacheIndex < sortedCachedPlayers.length) {
-                const cachedName = sortedCachedPlayers[cacheIndex].name;
-                if (!assignedNames.has(cachedName.toLowerCase())) { 
-                    newPlayerNamesArray[i] = cachedName;
-                    assignedNames.add(cachedName.toLowerCase());
-                    cacheIndex++;
-                    break; 
-                }
-                cacheIndex++; 
-            }
-        }
-    }
-    setPlayerNames(newPlayerNamesArray);
+    } else {
+        // Pre-fill for a new non-tournament game from cache
+        const sortedCachedPlayers = Array.isArray(cachedPlayers) ? [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()) : [];
+        setPlayerNames(currentNames => {
+            const namesToFill = [...currentNames];
+            const assignedNames = new Set<string>(namesToFill.filter(n => n.trim() !== '').map(n => n.toLowerCase()));
 
-  }, [isClient, tournamentIdFromQuery, initializePlayerNamesForTournament, numPlayers, cachedPlayers, toast, setPlayerNames, setLinkedTournament, setTargetScore, setGameMode, setNumPlayers]);
+            let cacheIndex = 0;
+            for (let i = 0; i < namesToFill.length; i++) {
+                if (namesToFill[i].trim() === '') {
+                    while(cacheIndex < sortedCachedPlayers.length) {
+                        const cachedName = sortedCachedPlayers[cacheIndex].name;
+                        if (!assignedNames.has(cachedName.toLowerCase())) { 
+                            namesToFill[i] = cachedName;
+                            assignedNames.add(cachedName.toLowerCase());
+                            cacheIndex++;
+                            break; 
+                        }
+                        cacheIndex++; 
+                    }
+                }
+            }
+            return namesToFill;
+        });
+    }
+
+  // This effect should only run once on mount for initialization logic.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isClient, tournamentIdFromQuery]);
 
 
   const handlePlayerNameChange = (index: number, name: string) => {
@@ -239,6 +254,11 @@ export default function NewGameForm() {
     e.preventDefault();
 
     const currentActivePlayerNames = playerNames.slice(0, numPlayers);
+
+    if (numPlayers < MIN_PLAYERS) {
+      toast({ title: "Validation Error", description: `A game requires at least ${MIN_PLAYERS} players.`, variant: "destructive"});
+      return;
+    }
 
     if (currentActivePlayerNames.some(name => !name.trim())) {
       toast({ title: "Validation Error", description: "All active players must have a name.", variant: "destructive" });
@@ -350,12 +370,10 @@ export default function NewGameForm() {
     ? (linkedTournament.players || []).map(p => ({id: p.id, name: p.name, lastUsed: ''}))
     : (Array.isArray(cachedPlayers) ? cachedPlayers : []);
 
-  const gamePlayerCountForForm = numPlayers; 
-
   const handleReshuffleTournamentPlayers = () => {
     if (linkedTournament) {
         const numTournamentPlayers = (linkedTournament.players || []).length;
-        const gameSizeForReshuffle = Math.min(MAX_PLAYERS, numTournamentPlayers > 0 ? numTournamentPlayers : MAX_PLAYERS);
+        const gameSizeForReshuffle = Math.min(MAX_FRENCH_DOMINO_PLAYERS, numTournamentPlayers > 0 ? numTournamentPlayers : MAX_FRENCH_DOMINO_PLAYERS);
         
         const names = selectPlayersForGame(linkedTournament.players || [], gameSizeForReshuffle);
         setPlayerNames(names); 
@@ -380,7 +398,7 @@ export default function NewGameForm() {
           </CardHeader>
           <CardContent className="p-0 text-sm text-primary/80 space-y-1">
             <p>
-              Game players for this round: {gamePlayerCountForForm}. 
+              Game players for this round: {numPlayers}. 
               Target score: {linkedTournament.targetScore}. 
               Mode: {linkedTournament.gameMode || DEFAULT_GAME_MODE}.
               {linkedTournament.playerParticipationMode === 'rotate_on_bust' && (linkedTournament.gameIds?.length || 0) > 0 
@@ -409,7 +427,13 @@ export default function NewGameForm() {
             <Label htmlFor="gameMode" className="text-base">Game Mode</Label>
             <Select
                 value={gameMode}
-                onValueChange={(value) => setGameMode(value as GameMode)}
+                onValueChange={(value) => {
+                    const newMode = value as GameMode;
+                    if (newMode === 'french_domino' && numPlayers > MAX_FRENCH_DOMINO_PLAYERS) {
+                        setNumPlayers(MAX_FRENCH_DOMINO_PLAYERS);
+                    }
+                    setGameMode(newMode);
+                }}
             >
                 <SelectTrigger id="gameMode" className="w-full mt-1">
                     <SelectValue placeholder="Select game mode" />
@@ -424,32 +448,56 @@ export default function NewGameForm() {
 
       <div>
           <Label htmlFor="numPlayers" className="text-base">Number of Players</Label>
-          <Select
-            value={String(numPlayers)}
-            onValueChange={(value) => {
-              if (!linkedTournament) { 
-                const newNum = Number(value);
-                setNumPlayers(newNum);
-              }
-            }}
-            disabled={!!linkedTournament} 
-          >
-            <SelectTrigger id="numPlayers" className="w-full mt-1">
-              <SelectValue placeholder="Select number of players" />
-            </SelectTrigger>
-            <SelectContent>
-              {[...Array(MAX_PLAYERS - MIN_PLAYERS + 1)].map((_, i) => (
-                <SelectItem key={MIN_PLAYERS + i} value={String(MIN_PLAYERS + i)}>
-                  {MIN_PLAYERS + i} Players
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count set to {gamePlayerCountForForm} for this tournament game. Edit player names/identities below if needed.</p>}
+          {gameMode === 'french_domino' ? (
+              <Select
+                value={String(numPlayers)}
+                onValueChange={(value) => {
+                  if (!linkedTournament) { 
+                    const newNum = Number(value);
+                    setNumPlayers(newNum);
+                  }
+                }}
+                disabled={!!linkedTournament} 
+              >
+                <SelectTrigger id="numPlayers-select" className="w-full mt-1">
+                  <SelectValue placeholder="Select number of players" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[...Array(MAX_FRENCH_DOMINO_PLAYERS - MIN_PLAYERS + 1)].map((_, i) => (
+                    <SelectItem key={MIN_PLAYERS + i} value={String(MIN_PLAYERS + i)}>
+                      {MIN_PLAYERS + i} Players
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+                <Input
+                    id="numPlayers-input"
+                    type="number"
+                    min={MIN_PLAYERS}
+                    value={numPlayers}
+                    onChange={(e) => {
+                        if (!linkedTournament) {
+                            const newNum = parseInt(e.target.value, 10);
+                            // Allow empty input for typing, but treat as MIN_PLAYERS for logic
+                            if (e.target.value === '') {
+                                setNumPlayers(MIN_PLAYERS);
+                                return;
+                            }
+                            if (!isNaN(newNum) && newNum >= MIN_PLAYERS) {
+                                setNumPlayers(newNum);
+                            }
+                        }
+                    }}
+                    className="w-full mt-1"
+                    disabled={!!linkedTournament}
+                />
+            )}
+          {linkedTournament && <p className="text-xs text-muted-foreground mt-1">Player count set to {numPlayers} for this tournament game. Edit player names/identities below if needed.</p>}
         </div>
 
       <div className="space-y-4">
-        {playerNames.slice(0, gamePlayerCountForForm).map((playerName, index) => (
+        {playerNames.map((playerName, index) => (
             <Card key={index} className="bg-secondary/50 p-4 rounded-md">
               <Label htmlFor={`playerName-${index}`} className="text-base font-semibold text-primary">Player {index + 1}</Label>
               <div className="flex items-center gap-2 mt-1">
@@ -471,7 +519,6 @@ export default function NewGameForm() {
                       {playerSourceForQuickAdd
                         .filter(ps => { 
                             const otherPlayerNamesLower = playerNames
-                                .slice(0, gamePlayerCountForForm)
                                 .filter((_, i) => i !== index)
                                 .map(name => name.toLowerCase());
                             return !otherPlayerNamesLower.includes(ps.name.toLowerCase());

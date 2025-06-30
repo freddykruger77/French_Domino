@@ -3,7 +3,8 @@ import type { GameMode } from './types';
 
 export const DEFAULT_TARGET_SCORE = 100;
 export const MIN_PLAYERS = 2;
-export const MAX_PLAYERS = 4; // Max players for a single game, not tournament
+// MAX_PLAYERS applies to French Domino mode only. Generic mode has no hard limit.
+export const MAX_PLAYERS = 4;
 export const PENALTY_POINTS = 10;
 export const DEFAULT_GAME_MODE: GameMode = 'french_domino';
 
