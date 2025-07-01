@@ -17,8 +17,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'French Domino Scoreboard',
   description: 'Track scores for French Domino games. Supports 2-4 players, tournaments, and advanced stats.',
+manifest: '/manifest.json',
+icons: {
+  icon: '/icons/icon-192x192.png',
+  apple: '/icons/icon-192x192.png',
+},
 };
-
 export default function RootLayout({
   children,
 }: Readonly<{

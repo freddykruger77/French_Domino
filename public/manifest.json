@@ -1,0 +1,43 @@
+{
+  "name": "French Domino Scorekeeper",
+  "short_name": "Domino Score",
+  "id": "/fd-scorekeeper",
+  "description": "Track French-Domino and other game scores with penalties, bust detection, and tournament stats—all in one tap.",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/index.html?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#4B5AFE",
+  "theme_color": "#4B5AFE",
+  "dir": "ltr",
+  "lang": "en",
+  "categories": ["games", "utilities"],
+  "screenshots": [
+    {
+      "src": "/screenshots/screenshot1-1080x1920.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "label": "Live score tracking"
+    },
+    {
+      "src": "/screenshots/screenshot2-1080x1920.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "label": "Tournament statistics"
+    }
+  ]
+}
