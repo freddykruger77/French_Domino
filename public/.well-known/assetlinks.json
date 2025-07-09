@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.hosted.us_central1.studio__french_domino_scoreboard.twa",
+        "sha256_cert_fingerprints": ["6D:85:4D:FD:9A:DB:AB:37:A7:8B:BE:4D:84:67:BE:56:B5:8E:9C:58:82:9F:58:A5:84:D4:16:21:93:72:1F:C8"]
+      }
+    }]
