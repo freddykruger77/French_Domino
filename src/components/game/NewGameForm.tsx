@@ -473,19 +473,21 @@ export default function NewGameForm() {
                     id="numPlayers-input"
                     type="number"
                     min={MIN_PLAYERS}
-                    value={numPlayers}
+                    value={isNaN(numPlayers) ? '' : numPlayers}
                     onChange={(e) => {
-                        if (!linkedTournament) {
-                            const newNum = parseInt(e.target.value, 10);
-                            if (e.target.value === '') {
-                                handleNumPlayersChange(MIN_PLAYERS);
-                                return;
-                            }
-                            if (!isNaN(newNum) && newNum >= MIN_PLAYERS) {
-                                handleNumPlayersChange(newNum);
-                            }
-                        }
-                    }}
+                      if (!linkedTournament) {
+                          const value = e.target.value;
+                          if (value === '') {
+                              // Allow empty string temporarily so the user can delete
+                              setNumPlayers(NaN);
+                              return;
+                          }
+                          const newNum = parseInt(value, 10);
+                          if (!isNaN(newNum) && newNum >= MIN_PLAYERS) {
+                              handleNumPlayersChange(newNum);
+                          }
+                      }
+                    }}                   
                     className="w-full mt-1"
                     disabled={!!linkedTournament}
                 />
