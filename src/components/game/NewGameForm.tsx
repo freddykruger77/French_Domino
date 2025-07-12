@@ -84,16 +84,6 @@ export default function NewGameForm() {
     setIsClient(true);
   }, []);
 
-  // Effect to keep playerNames array size in sync with numPlayers, preserving existing data.
-  useEffect(() => {
-    setPlayerNames(current => {
-      if (current.length === numPlayers) return current;
-      const newArray = new Array(numPlayers).fill('');
-      current.slice(0, numPlayers).forEach((name, i) => newArray[i] = name);
-      return newArray;
-    });
-  }, [numPlayers]);
-
   const initializePlayerNamesForTournament = useCallback((tournament: Tournament, gameSizeForThisGame: number) => {
     let selectedPlayerNames: string[] = [];
 
@@ -210,7 +200,6 @@ export default function NewGameForm() {
          setLinkedTournament(null); 
       }
     } else {
-        // Pre-fill for a new non-tournament game from cache
         const sortedCachedPlayers = Array.isArray(cachedPlayers) ? [...cachedPlayers].sort((a,b) => new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime()) : [];
         setPlayerNames(currentNames => {
             const namesToFill = [...currentNames];
@@ -239,6 +228,15 @@ export default function NewGameForm() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, tournamentIdFromQuery]);
 
+  const handleNumPlayersChange = (newNum: number) => {
+    setNumPlayers(newNum);
+    setPlayerNames(current => {
+      if (current.length === newNum) return current;
+      const newArray = new Array(newNum).fill('');
+      current.slice(0, newNum).forEach((name, i) => newArray[i] = name);
+      return newArray;
+    });
+  };
 
   const handlePlayerNameChange = (index: number, name: string) => {
     const newPlayerNames = [...playerNames];
@@ -454,7 +452,7 @@ export default function NewGameForm() {
                 onValueChange={(value) => {
                   if (!linkedTournament) { 
                     const newNum = Number(value);
-                    setNumPlayers(newNum);
+                    handleNumPlayersChange(newNum);
                   }
                 }}
                 disabled={!!linkedTournament} 
@@ -479,13 +477,12 @@ export default function NewGameForm() {
                     onChange={(e) => {
                         if (!linkedTournament) {
                             const newNum = parseInt(e.target.value, 10);
-                            // Allow empty input for typing, but treat as MIN_PLAYERS for logic
                             if (e.target.value === '') {
-                                setNumPlayers(MIN_PLAYERS);
+                                handleNumPlayersChange(MIN_PLAYERS);
                                 return;
                             }
                             if (!isNaN(newNum) && newNum >= MIN_PLAYERS) {
-                                setNumPlayers(newNum);
+                                handleNumPlayersChange(newNum);
                             }
                         }
                     }}
@@ -565,3 +562,5 @@ export default function NewGameForm() {
     </form>
   );
 }
+
+    
