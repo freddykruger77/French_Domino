@@ -92,7 +92,7 @@ export default function NewGameForm() {
       current.slice(0, numPlayers).forEach((name, i) => newArray[i] = name);
       return newArray;
     });
-  }, [numPlayers, setPlayerNames]);
+  }, [numPlayers]);
 
   const initializePlayerNamesForTournament = useCallback((tournament: Tournament, gameSizeForThisGame: number) => {
     let selectedPlayerNames: string[] = [];
@@ -234,8 +234,8 @@ export default function NewGameForm() {
             return namesToFill;
         });
     }
-
-  // This effect should only run once on mount for initialization logic.
+  // We want this initialization logic to run only once when the component mounts and has client-side context.
+  // Including all dependencies would re-run this logic undesirably on every change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, tournamentIdFromQuery]);
 
